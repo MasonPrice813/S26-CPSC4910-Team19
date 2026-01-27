@@ -1,0 +1,32 @@
+body {
+  font-family: Arial, sans-serif;
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: #f9f9f9;
+}
+
+.box {
+  width: 100%;
+  max-width: 700px;
+  padding: 20px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background-color: #ffffff;
+}
+
+h1 {
+  text-align: center;
+  font-size: 22px;
+  margin-bottom: 16px;
+}
+
+.row {
+  margin: 10px 0;
+}
+
+.label {
+  font-weight: bold;
+}
