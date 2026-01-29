@@ -80,6 +80,7 @@ body {
   padding: 22px 26px;
   border-radius: 10px;
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.06);
+  margin-bottom: 24px;
 }
 
 .content-box h2 {
