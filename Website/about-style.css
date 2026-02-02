@@ -28,6 +28,11 @@ body {
   font-weight: 600;
 }
 
+.nav-actions {
+  display: flex;
+  gap: 12px;
+}
+
 /* Buttons */
 .btn {
   text-decoration: none;
