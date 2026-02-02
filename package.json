@@ -1,0 +1,25 @@
+{
+  "name": "s26-cpsc4910-team19",
+  "version": "1.0.0",
+  "description": "Group 19 of CPSC 4910/4911's Github Repository.",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MasonPrice813/S26-CPSC4910-Team19.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/MasonPrice813/S26-CPSC4910-Team19/issues"
+  },
+  "homepage": "https://github.com/MasonPrice813/S26-CPSC4910-Team19#readme",
+  "dependencies": {
+    "express": "^4.22.1"
+  }
+}
