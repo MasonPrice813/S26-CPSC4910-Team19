@@ -1,3 +1,4 @@
+//Calling server.js endpoint and retrieving values returned
 fetch("/api/about")
   .then((res) => res.json())
   .then((data) => {
