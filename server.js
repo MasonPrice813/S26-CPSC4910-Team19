@@ -40,7 +40,7 @@ app.get("/api/about", (req, res) => {
 
   res.json({
     productName: "Good Driver Incentive Program",
-    version: "1.0",
+    version: "1.2",
     releaseDate: "Spring 2026",
     teamNumber: "Team 19",
     sprint: sprint ?? "No active sprint",
