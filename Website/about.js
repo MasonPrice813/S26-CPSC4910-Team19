@@ -6,7 +6,7 @@ fetch("/api/about")
     document.getElementById("version").textContent = data.version;
     document.getElementById("releaseDate").textContent = data.releaseDate;
     document.getElementById("teamNumber").textContent = data.teamNumber;
-    document.getElementById("sprint").textContent = data.sprint;
+    document.getElementById("productDescription").textContent = data.productDescription;
   })
   .catch(() => {
     document.getElementById("sprint").textContent = "Unavailable";
