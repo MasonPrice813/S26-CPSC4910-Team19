@@ -1,1 +1,159 @@
-Application page
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Application — Driver Incentive Program</title>
+
+  <!-- Shared Styles -->
+  <link rel="stylesheet" href="about-style.css" />
+</head>
+
+<body>
+
+<!-- Navigation -->
+<nav class="navbar">
+  <div class="nav-brand">Driver Incentive Program</div>
+  <div class="nav-actions">
+    <a href="about.html" class="btn btn-primary">About</a>
+    <a href="/login.html" class="btn btn-primary">Login</a>
+  </div>
+</nav>
+
+<main class="container">
+
+  <!-- Page Header -->
+  <section class="header">
+    <h1>Application Form</h1>
+    <p class="subtitle">
+      Submit your application to participate in the Driver Incentive Program
+    </p>
+  </section>
+
+  <!-- Form Card -->
+  <section class="content-box form-card">
+
+    <form class="application-form">
+
+      <!-- ACCOUNT TYPE (KEEP FOR CONTEXT) -->
+      <fieldset class="form-section">
+        <legend>Account Type</legend>
+
+        <div class="form-group">
+          <label for="role">Role</label>
+          <select id="role" required>
+            <option value="">Select role</option>
+            <option>Driver</option>
+            <option>Sponsor</option>
+            <option>Administrator</option>
+          </select>
+        </div>
+      </fieldset>
+
+      <!-- PERSONAL INFORMATION (THIS GOES HERE) -->
+      <fieldset class="form-section">
+        <legend>Personal Information</legend>
+
+        <div class="form-group">
+          <label for="firstName">First Name</label>
+          <input id="firstName" type="text" placeholder="Enter your first name" required />
+        </div>
+
+        <!-- LAST NAME GOES HERE -->
+
+        <div class="form-group">
+          <label for="email">Email Address</label>
+          <input id="email" type="email" placeholder="example@email.com" required />
+        </div>
+
+        <!-- PHONE NUMBER FOR OTHER ROLES GOES HERE -->
+
+        <div class="form-group">
+          <label for="ssn">Social Security Number</label>
+          <input
+            id="ssn"
+            type="password"
+            placeholder="XXX-XX-XXXX"
+            inputmode="numeric"
+          />
+          <p class="helper-text">
+            Your SSN is hidden while typing for security
+          </p>
+        </div>
+      </fieldset>
+
+      <!-- AGE & BIRTHDAY (THIS GOES HERE) -->
+      <fieldset class="form-section">
+        <legend>Age & Birth Information</legend>
+
+        <div class="form-group">
+          <label for="age">Age</label>
+          <input id="age" type="number" min="0" placeholder="Enter your age" />
+        </div>
+
+        <div class="form-group">
+          <label for="birthday">Date of Birth</label>
+          <input id="birthday" type="date" />
+        </div>
+      </fieldset>
+
+      <!-- DRIVER / SPONSOR HISTORY (THIS GOES HERE) -->
+      <fieldset class="form-section">
+        <legend>History Information</legend>
+
+        <div class="form-group">
+          <label for="drivingRecord">Driving Record</label>
+          <textarea
+            id="drivingRecord"
+            rows="4"
+            placeholder="Briefly describe your driving history"
+          ></textarea>
+        </div>
+
+        <div class="form-group">
+          <label for="criminalHistory">Criminal History</label>
+          <textarea
+            id="criminalHistory"
+            rows="4"
+            placeholder="Briefly describe any criminal history (if applicable)"
+          ></textarea>
+        </div>
+      </fieldset>
+
+      <!-- DRIVER LICENSE NUMBER (THIS GOES HERE) -->
+      <fieldset class="form-section">
+        <legend>Driver’s License Information</legend>
+
+        <div class="form-group">
+          <label for="dlNumber">Driver’s License Number</label>
+          <input
+            id="dlNumber"
+            type="text"
+            placeholder="Enter your driver’s license number"
+          />
+        </div>
+      </fieldset>
+
+      <!-- OTHER ADMIN FIELDS GO HERE -->
+      <!-- OTHER DRIVER FIELDS GO HERE -->
+      <!-- OTHER SPONSOR FIELDS GO HERE -->
+      <!-- ADDITIONAL CUSTOM FIELDS GO HERE -->
+
+      <!-- ACTIONS -->
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">
+          Submit Application
+        </button>
+        <button type="reset" class="btn btn-outline">
+          Discard
+        </button>
+      </div>
+
+    </form>
+
+  </section>
+
+</main>
+
+</body>
+</html>
