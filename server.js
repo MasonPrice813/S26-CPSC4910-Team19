@@ -1,58 +1,93 @@
 const express = require("express");
 const path = require("path");
+require("dotenv").config();
+const mysql = require("mysql2/promise");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Serve static files
+const pool = mysql.createPool({
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
+  waitForConnections: true,
+  connectionLimit: 10,
+});
+
+//Serve static files
 app.use("/Website", express.static(path.join(__dirname, "Website")));
 app.use("/Images", express.static(path.join(__dirname, "Images")));
 
-// Sprint dates
-const sprintDates = [
-  { num: 1, start: "2026-01-27", end: "2026-02-02" },
-  { num: 2, start: "2026-02-03", end: "2026-02-09" },
-  { num: 3, start: "2026-02-10", end: "2026-02-16" },
-  { num: 4, start: "2026-02-17", end: "2026-02-23" },
-  { num: 5, start: "2026-02-24", end: "2026-03-02" },
-  { num: 6, start: "2026-03-03", end: "2026-03-09" },
-  { num: 7, start: "2026-03-10", end: "2026-03-23" },
-  { num: 8, start: "2026-03-24", end: "2026-03-30" },
-  { num: 9, start: "2026-03-31", end: "2026-04-06" },
-  { num: 10, start: "2026-04-07", end: "2026-04-13" },
-];
+//API route
+app.get("/api/about", async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT team_num, sprint_num, release_date, product_name, product_description
+       FROM about_page
+       LIMIT 1`
+    );
 
-function currentSprint(dates, now = new Date()) {
-  // Convert today's date to YYYY-MM-DD string
-  const todayStr = now.toISOString().slice(0, 10);
-
-  for (const s of dates) {
-    if (todayStr >= s.start && todayStr <= s.end) {
-      return s.num;
+    if (rows.length === 0) {
+      return res.status(404).json({ error: "about_page table is empty" });
     }
+
+    const row = rows[0];
+
+    res.json({
+      teamNumber: `Team ${row.team_num}`,
+      version: `Sprint ${row.sprint_num}`,
+      releaseDate: row.release_date,
+      productName: row.product_name,
+      productDescription: row.product_description
+    });
+  } catch (err) {
+    console.error("DB error:", err);
+    res.status(500).json({ error: "Database error" });
   }
-  return null;
-}
-
-// API route
-app.get("/api/about", (req, res) => {
-  const sprint = currentSprint(sprintDates);
-
-  res.json({
-    productName: "Good Driver Incentive Program",
-    version: "1.2",
-    releaseDate: "Spring 2026",
-    teamNumber: "Team 19",
-    sprint: sprint ?? "No active sprint",
-  });
 });
 
-// Root route
+//Root route
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "Website", "about.html"));
 });
 
-// Start server
+
+// ------- UI DEV ONLY -------
+app.get("/api/me", (req, res) => {
+  //Hardcoded for building UI
+  res.json({ role: "Sponsor" }); 
+});
+// ---------------------------
+
+let applicationSchema = { customFields: [] };
+
+//Anyone can read the application schema
+app.get("/api/application-schema", (req, res) => {
+  res.json(applicationSchema);
+});
+
+// Middleware to enforce Sponsor-only access
+function requireSponsor(req, res, next) {
+  const role = "Sponsor"; //Hardcoded for testing
+  if (role !== "Sponsor") {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  next();
+}
+
+//Only sponsors can modify the schema
+app.put(
+  "/api/application-schema",
+  express.json(),
+  requireSponsor,
+  (req, res) => {
+    applicationSchema = req.body;
+    res.json({ ok: true, schema: applicationSchema });
+  }
+);
+
+//Start server
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
