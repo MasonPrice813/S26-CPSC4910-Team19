@@ -179,6 +179,34 @@
       <!-- OTHER DRIVER FIELDS GO HERE -->
       <!-- OTHER SPONSOR FIELDS GO HERE -->
       <!-- ADDITIONAL CUSTOM FIELDS GO HERE -->
+      <div id="customFields"></div>
+      <div id="sponsorFieldEditor" style="display: none; margin-top: 20px;">
+        <h3>Manage Application Fields (Sponsor Only)</h3>
+
+        <div class="form-group">
+          <label for="newFieldLabel">Field Label</label>
+          <input
+            type="text"
+            id="newFieldLabel"
+            placeholder="e.g. Company Name"
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="newFieldType">Field Type</label>
+          <select id="newFieldType">
+            <option value="text">Text</option>
+            <option value="number">Number</option>
+            <option value="date">Date</option>
+          </select>
+        </div>
+
+        <button type="button" class="btn btn-primary" id="addFieldBtn">
+          Add Field
+        </button>
+
+        <ul id="fieldList" style="margin-top: 12px;"></ul>
+      </div>
 
       <!-- ACTIONS -->
       <div class="form-actions">
@@ -195,6 +223,8 @@
   </section>
 
 </main>
+
+<script src="/Website/application.js"></script>
 
 </body>
 </html>
