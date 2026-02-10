@@ -1,54 +1,121 @@
-
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Work in Progress</title>
-  <style>
-    body {
-      margin: 0;
-      height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-family: Arial, Helvetica, sans-serif;
-      background: linear-gradient(135deg, #1e293b, #0f172a);
-      color: #ffffff;
-      text-align: center;
-    }
-
-    .container {
-      max-width: 600px;
-      padding: 40px;
-      border-radius: 12px;
-      background: rgba(255, 255, 255, 0.08);
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-    }
-
-    h1 {
-      font-size: 2.5rem;
-      margin-bottom: 16px;
-    }
-
-    p {
-      font-size: 1.1rem;
-      opacity: 0.85;
-    }
-
-    .emoji {
-      font-size: 3rem;
-      margin-bottom: 20px;
-      display: block;
-    }
-  </style>
+  <title>Sign In</title>
+  <link rel="stylesheet" href="login-style.css" />
 </head>
 <body>
-  <div class="container">
-    <span class="emoji">🚧</span>
-    <h1>Work in Progress</h1>
-    <p>This page is currently under construction.<br />Check back soon!</p>
-  </div>
+  <!-- Top Nav -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">GD</div>
+      <div class="brand-text">
+        <div class="brand-name">Good Driver</div>
+        <div class="brand-sub">Application Portal</div>
+      </div>
+    </div>
+
+    <nav class="nav">
+      <a class="nav-link" href="about.html">About</a>
+      <a class="nav-link" href="application.html">Apply Now!</a>
+      <a class="nav-link nav-link-active" href="login.html">Sign In</a>
+    </nav>
+  </header>
+
+  <!-- Main -->
+  <main class="wrap">
+    <section class="card">
+      <div class="card-header">
+        <h1>Welcome back</h1>
+        <p class="muted">Sign in to manage your application and status.</p>
+      </div>
+
+      <form class="form" action="#" method="post">
+        <label class="field">
+          <span>Email</span>
+          <input
+            type="email"
+            name="email"
+            placeholder="you@example.com"
+            autocomplete="email"
+            required
+          />
+        </label>
+
+        <label class="field">
+          <span>Password</span>
+          <div class="password-row">
+            <input
+              id="password"
+              type="password"
+              name="password"
+              placeholder="••••••••"
+              autocomplete="current-password"
+              required
+            />
+            <button type="button" class="ghost-btn" id="togglePassword" aria-label="Show password">
+              Show
+            </button>
+          </div>
+        </label>
+
+        <div class="row">
+          <label class="check">
+            <input type="checkbox" name="remember" />
+            <span>Remember me</span>
+          </label>
+
+          <a class="link" href="#" aria-disabled="true" title="Hook this up later">
+            Forgot password?
+          </a>
+        </div>
+
+        <button class="primary-btn" type="submit">Sign In</button>
+
+        <div class="divider"><span>or</span></div>
+
+        <a class="secondary-btn" href="application.html">Create an application</a>
+
+        <p class="fineprint">
+          By signing in, you agree to our <a class="link" href="#">Terms</a> and <a class="link" href="#">Privacy Policy</a>.
+        </p>
+      </form>
+    </section>
+
+    <aside class="side">
+      <div class="side-card">
+        <h2>What you can do</h2>
+        <ul>
+          <li>Check application status</li>
+          <li>Update contact info</li>
+          <li>Complete sponsor-required fields</li>
+        </ul>
+        <p class="muted small">
+          (Need to connect to backend.)
+        </p>
+      </div>
+    </aside>
+  </main>
+
+  <footer class="footer">
+    <span class="muted small">© <span id="year"></span> Good Driver · All rights reserved</span>
+  </footer>
+
+  <script>
+    // Tiny UX helpers only (no backend logic)
+    document.getElementById("year").textContent = new Date().getFullYear();
+
+    const btn = document.getElementById("togglePassword");
+    const input = document.getElementById("password");
+
+    btn.addEventListener("click", () => {
+      const isHidden = input.type === "password";
+      input.type = isHidden ? "text" : "password";
+      btn.textContent = isHidden ? "Hide" : "Show";
+      btn.setAttribute("aria-label", isHidden ? "Hide password" : "Show password");
+    });
+  </script>
 </body>
 </html>
