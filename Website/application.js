@@ -180,3 +180,14 @@ document.addEventListener("DOMContentLoaded", () => {
     if (editor) editor.style.display = "none";
   });
 });
+
+const roleSelect = document.getElementById("role");
+const sponsorGroup = document.getElementById("sponsorGroup");
+
+roleSelect.addEventListener("change", () => {
+  if (roleSelect.value === "Driver") {
+    sponsorGroup.style.display = "block";
+  } else {
+    sponsorGroup.style.display = "none";
+  }
+});
