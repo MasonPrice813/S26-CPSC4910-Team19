@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Catalog (Home)</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 0; }
+      .nav {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 14px 18px;
+        border-bottom: 1px solid #ddd;
+      }
+      .nav .right { display: flex; gap: 10px; align-items: center; }
+      .btn {
+        padding: 8px 12px;
+        border: 1px solid #333;
+        background: white;
+        cursor: pointer;
+        border-radius: 6px;
+      }
+      .btn.primary {
+        background: #111;
+        color: white;
+        border-color: #111;
+      }
+      .container { padding: 18px; }
+      .card {
+        border: 1px solid #ddd;
+        border-radius: 10px;
+        padding: 16px;
+        max-width: 800px;
+      }
+      .muted { color: #666; }
+    </style>
+  </head>
+
+  <body>
+    <div class="nav">
+      <div>
+        <strong>Good Driver Incentive Program</strong>
+        <span class="muted" id="meBadge" style="margin-left: 10px;">Loading user...</span>
+      </div>
+
+      <div class="right">
+        <button id="pendingAppsBtn" class="btn primary" style="display:none;">
+          Pending Driver Apps
+        </button>
+        <button id="logoutBtn" class="btn">Log out</button>
+      </div>
+    </div>
+
+    <div class="container">
+      <div class="card">
+        <h2>Catalog Home (Placeholder)</h2>
+        <p class="muted">
+          This is a temporary home page. Everyone lands here after login.
+        </p>
+        <p>
+          Sponsors will see a button in the top right to review pending driver applications.
+        </p>
+      </div>
+    </div>
+
+    <script src="/Website/catalog.js"></script>
+  </body>
+</html>

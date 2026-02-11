@@ -1,0 +1,30 @@
+async function getJSON(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${url} -> ${res.status}`);
+  return res.json();
+}
+
+document.addEventListener("DOMContentLoaded", async () => {
+  const meBadge = document.getElementById("meBadge");
+  const pendingBtn = document.getElementById("pendingAppsBtn");
+
+  try {
+    const me = await getJSON("/api/me");
+    const sponsorText = me.sponsor ? ` • ${me.sponsor}` : "";
+    meBadge.textContent = `Logged in as: ${me.role}${sponsorText}`;
+
+    if (me.role === "Sponsor") {
+      pendingBtn.style.display = "inline-block";
+      pendingBtn.addEventListener("click", () => {
+        window.location.href = "/Website/sponsor-applications.html";
+      });
+    }
+  } catch (err) {
+    console.error(err);
+    meBadge.textContent = "Not logged in";
+  }
+
+  document.getElementById("logoutBtn").addEventListener("click", async () => {
+    window.location.href = "/Website/login.html";
+  });
+});
