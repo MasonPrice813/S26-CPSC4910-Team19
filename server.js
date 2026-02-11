@@ -4,6 +4,7 @@ require("dotenv").config();
 const mysql = require("mysql2/promise");
 
 const app = express();
+app.use(express.json());
 const PORT = process.env.PORT || 3000;
 
 const pool = mysql.createPool({
@@ -86,6 +87,63 @@ app.put(
     res.json({ ok: true, schema: applicationSchema });
   }
 );
+
+//Posting application data to DB on submit
+app.post("/api/applications", async (req, res) => {
+  try {
+    const {
+      role,
+      first_name,
+      last_name,
+      username,
+      password,
+      email,
+      phone_number,
+      sponsor,
+      ssn_last4,
+      age,
+      dob,
+      driving_record,
+      criminal_history,
+      dl_num,
+      dl_expiration,
+    } = req.body || {};
+
+    if (!role || !first_name || !last_name || !email || !password) {
+      return res.status(400).json({ error: "Missing required fields." });
+    }
+
+    const [result] = await pool.query(
+      `INSERT INTO applications
+        (role, first_name, last_name, username, password, email, phone_number, sponsor,
+         ssn_last4, age, dob, driving_record, criminal_history, dl_num, dl_expiration)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        normalizedRole,
+        first_name,
+        last_name,
+        username || null,
+        password,
+        email,
+        phone_number || null,
+        sponsor || null,
+        ssn_last4 || null,
+        age || null,
+        dob || null,
+        driving_record || null,
+        criminal_history || null,
+        dl_num || null,
+        dl_expiration || null,
+      ]
+    );
+
+    res.status(201).json({ ok: true, application_id: result.insertId });
+  } catch (err) {
+    console.error("Insert application error:", err);
+    return res.status(500).json({ error: "Could not save application." });
+  }
+});
+
 
 //Start server
 app.listen(PORT, "0.0.0.0", () => {

@@ -191,3 +191,67 @@ roleSelect.addEventListener("change", () => {
     sponsorGroup.style.display = "none";
   }
 });
+
+//Listening for form submit
+async function postJSON(url, body) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const msg = await res.text().catch(() => "");
+    throw new Error(`${url} -> HTTP ${res.status} ${msg}`);
+  }
+  return res.json();
+}
+
+function last4FromSSN(ssnRaw) {
+  const digits = String(ssnRaw || "").replace(/\D/g, "");
+  if (digits.length < 4) return "";
+  return digits.slice(-4);
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  const form = document.querySelector(".application-form");
+  if (!form) return;
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    const role = document.getElementById("role")?.value || "";
+    const sponsor = document.getElementById("sponsor")?.value || "";
+
+    const payload = {
+      role,
+      first_name: document.getElementById("firstName")?.value?.trim() || "",
+      last_name: document.getElementById("lastName")?.value?.trim() || "",
+      username: document.getElementById("username")?.value?.trim() || "",
+      email: document.getElementById("email")?.value?.trim() || "",
+      password: document.getElementById("password")?.value || "",
+      phone_number: document.getElementById("phone")?.value?.trim() || null,
+
+      //Only relevant for Driver, send null for sponsor and admin applications
+      sponsor: role === "Driver" ? sponsor : null,
+
+      ssn_last4: last4FromSSN(document.getElementById("ssn")?.value),
+      age: Number(document.getElementById("age")?.value) || null,
+      dob: document.getElementById("birthday")?.value || null,
+
+      driving_record: document.getElementById("drivingRecord")?.value || null,
+      criminal_history: document.getElementById("criminalHistory")?.value || null,
+
+      dl_num: document.getElementById("dlNumber")?.value?.trim() || null,
+      dl_expiration: document.getElementById("expDate")?.value || null,
+    };
+
+    try {
+      const out = await postJSON("/api/applications", payload);
+      alert(`Application submitted! ID: ${out.application_id}`);
+      form.reset();
+    } catch (err) {
+      console.error(err);
+      alert("Could not submit application. Check console / server logs.");
+    }
+  });
+});
