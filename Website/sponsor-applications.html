@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pending Driver Applications</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 0; }
+      .nav {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 14px 18px;
+        border-bottom: 1px solid #ddd;
+      }
+      .container { padding: 18px; }
+      .btn {
+        padding: 8px 12px;
+        border: 1px solid #333;
+        background: white;
+        cursor: pointer;
+        border-radius: 6px;
+      }
+      .btn.primary { background: #111; color: white; border-color: #111; }
+      .btn.danger { border-color: #b00020; color: #b00020; }
+      .muted { color: #666; }
+      .list { display: grid; gap: 12px; max-width: 900px; }
+      .card { border: 1px solid #ddd; border-radius: 10px; padding: 14px; }
+      .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+      .actions { display: flex; gap: 10px; }
+      .field { margin: 4px 0; }
+      code { background: #f6f6f6; padding: 2px 6px; border-radius: 6px; }
+    </style>
+  </head>
+
+  <body>
+    <div class="nav">
+      <div>
+        <strong>Pending Driver Applications</strong>
+        <span class="muted" id="meBadge" style="margin-left: 10px;">Loading user...</span>
+      </div>
+
+      <div>
+        <button class="btn" id="backBtn">Back to Catalog</button>
+      </div>
+    </div>
+
+    <div class="container">
+      <p class="muted" id="status">Loading pending applications...</p>
+      <div class="list" id="list"></div>
+    </div>
+
+    <script src="/Website/sponsor-applications.js"></script>
+  </body>
+</html>

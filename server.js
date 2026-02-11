@@ -57,7 +57,11 @@ app.get("/", (req, res) => {
 // ------- UI DEV ONLY -------
 app.get("/api/me", (req, res) => {
   //Hardcoded for building UI
-  res.json({ role: "Sponsor" }); 
+  res.json({ 
+    role: "Sponsor",
+    sponsor: "Sponsor 1",
+    user_id: 1
+  }); 
 });
 // ---------------------------
 
@@ -70,10 +74,9 @@ app.get("/api/application-schema", (req, res) => {
 
 // Middleware to enforce Sponsor-only access
 function requireSponsor(req, res, next) {
-  const role = "Sponsor"; //Hardcoded for testing
-  if (role !== "Sponsor") {
-    return res.status(403).json({ error: "Forbidden" });
-  }
+  //Hardcoded for testing
+  req.me = { role: "Sponsor", sponsor: "Sponsor 1", user_id: 1 };
+  if (req.me.role !== "Sponsor") return res.status(403).json({ error: "Forbidden" });
   next();
 }
 
@@ -141,6 +144,38 @@ app.post("/api/applications", async (req, res) => {
   } catch (err) {
     console.error("Insert application error:", err);
     return res.status(500).json({ error: "Could not save application." });
+  }
+});
+
+app.get("/api/sponsor/applications", requireSponsor, async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT
+         id,
+         role,
+         first_name,
+         last_name,
+         username,
+         email,
+         phone_number,
+         sponsor,
+         ssn_last4,
+         age,
+         dob,
+         driving_record,
+         criminal_history,
+         dl_num,
+         dl_expiration
+       FROM applications
+       WHERE role = 'Driver' AND sponsor = ?
+       ORDER BY id DESC`,
+      [req.me.sponsor]
+    );
+
+    res.json({ applications: rows });
+  } catch (err) {
+    console.error("sponsor applications error:", err);
+    res.status(500).json({ error: "Database error" });
   }
 });
 
