@@ -116,6 +116,8 @@ app.post("/api/applications", async (req, res) => {
       return res.status(400).json({ error: "Missing required fields." });
     }
 
+    const normalizedRole = role === "Administrator" ? "Admin" : role;
+
     const [result] = await pool.query(
       `INSERT INTO applications
         (role, first_name, last_name, username, password, email, phone_number, sponsor,
@@ -142,8 +144,17 @@ app.post("/api/applications", async (req, res) => {
 
     res.status(201).json({ ok: true, application_id: result.insertId });
   } catch (err) {
-    console.error("Insert application error:", err);
-    return res.status(500).json({ error: "Could not save application." });
+    console.error("Insert application error:", {
+    code: err.code,
+    errno: err.errno,
+    sqlMessage: err.sqlMessage,
+    sqlState: err.sqlState,
+  });
+
+    return res.status(500).json({
+      error: "Could not save application.",
+      details: err.sqlMessage || err.code
+    });
   }
 });
 
@@ -175,6 +186,93 @@ app.get("/api/sponsor/applications", requireSponsor, async (req, res) => {
     res.json({ applications: rows });
   } catch (err) {
     console.error("sponsor applications error:", err);
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
+//API to move driver data from applications table to users and drivers table
+app.post("/api/sponsor/applications/:id/approve", requireSponsor, async (req, res) => {
+  const appId = Number(req.params.id);
+  if (!Number.isFinite(appId)) return res.status(400).json({ error: "Invalid id" });
+
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    const [apps] = await conn.query(
+      `SELECT id, first_name, last_name, username, email, password, phone_number, sponsor
+       FROM applications
+       WHERE id = ? AND role = 'Driver' AND sponsor = ?
+       FOR UPDATE`,
+      [appId, req.me.sponsor]
+    );
+
+    if (apps.length === 0) {
+      await conn.rollback();
+      return res.status(404).json({ error: "Application not found for your sponsor." });
+    }
+
+    const a = apps[0];
+
+    const [userResult] = await conn.query(
+      `INSERT INTO users
+         (role, first_name, last_name, username, email, password, phone_number, sponsor)
+       VALUES
+         (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        "Driver",
+        a.first_name,
+        a.last_name,
+        a.username,
+        a.email,
+        a.password,
+        a.phone_number || null,
+        a.sponsor,
+      ]
+    );
+
+    const newUserId = userResult.insertId;
+
+    await conn.query(
+      `INSERT INTO drivers (user_id)
+       VALUES (?)`,
+      [newUserId]
+    );
+
+    //Delete from applications
+    await conn.query(`DELETE FROM applications WHERE id = ?`, [a.id]);
+
+    await conn.commit();
+    res.json({ ok: true, user_id: newUserId });
+  } catch (err) {
+    await conn.rollback();
+    console.error("approve error:", err);
+
+    res.status(500).json({ error: "Could not approve application." });
+  } finally {
+    conn.release();
+  }
+});
+
+//API to remove application from table when rejected
+app.post("/api/sponsor/applications/:id/reject", requireSponsor, async (req, res) => {
+  const appId = Number(req.params.id);
+  if (!Number.isFinite(appId)) return res.status(400).json({ error: "Invalid id" });
+
+  try {
+    const [result] = await pool.query(
+      `DELETE FROM applications
+       WHERE id = ? AND role = 'Driver' AND sponsor = ?`,
+      [appId, req.me.sponsor]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "Application not found for your sponsor." });
+    }
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("reject error:", err);
     res.status(500).json({ error: "Database error" });
   }
 });
