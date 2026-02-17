@@ -30,6 +30,11 @@ let sections = [
         id: "useraddress",
         title: "Address",
         content: ""
+    },
+    {
+        id: "sponsor",
+        title: "Your Sponsor",
+        content: "Example Sponsor"
     }
 ];
 
@@ -43,7 +48,16 @@ function renderingSections() {
         sectionDiv.className = "content-box";
         sectionDiv.dataset.id = section.id;
         
-        if (section.id === "profilePicture") {
+        if (section.id === "sponsor") {
+
+        profileButtons = ""; 
+        profileContent = `
+            <p style="margin-top:12px; color: var(--muted);">
+                ${section.content}
+            </p>
+        `;
+        }
+        else if (section.id === "profilePicture") {
 
             if (section.content === "") {
                 profileButtons = `
@@ -91,7 +105,7 @@ function renderingSections() {
                 `;
             }
         }
-        
+
         // Putting the buttons and content in the current section
         sectionDiv.innerHTML = `
         <div class="info-row">
