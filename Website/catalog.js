@@ -24,6 +24,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     meBadge.textContent = "Not logged in";
   }
 
+  document.getElementById("profileBtn").addEventListener("click", async () => {
+    window.location.href = "/Website/profile.html";
+  });
   document.getElementById("logoutBtn").addEventListener("click", async () => {
     window.location.href = "/Website/login.html";
   });
