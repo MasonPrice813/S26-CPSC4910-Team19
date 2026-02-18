@@ -332,7 +332,7 @@ app.post("/api/auth/login", async (req, res) => {
       const newHash = await bcrypt.hash(password, 12);
       await pool.query(
         `UPDATE users SET password = ? WHERE id = ?`,
-        [newHash, user.user_id]
+        [newHash, user.id]
       );
     }
 
