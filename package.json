@@ -20,8 +20,11 @@
   },
   "homepage": "https://github.com/MasonPrice813/S26-CPSC4910-Team19#readme",
   "dependencies": {
+    "bcrypt": "^6.0.0",
     "dotenv": "^17.2.3",
     "express": "^4.22.1",
+    "express-rate-limit": "^8.2.1",
+    "express-session": "^1.19.0",
     "mysql2": "^3.16.3"
   }
 }

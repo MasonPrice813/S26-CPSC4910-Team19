@@ -33,7 +33,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       msg.textContent = "Login successful!";
-      setTimeout(() => window.location.href = "application.html", 600);
+      setTimeout(() => window.location.href = "/Website/catalog.html", 600);
 
     } catch (err) {
       msg.textContent = "Network error.";
