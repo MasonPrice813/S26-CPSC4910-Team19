@@ -68,16 +68,16 @@
         <p class="muted">Sign in to manage your application and status.</p>
       </div>
 
-      <form class="form" action="#" method="post">
+      <form class="form" id="loginForm">
 
         <label class="field">
-          <span>Email</span>
+          <span>Username</span>
           <input
-            type="email"
-            name="email"
-            placeholder="you@example.com"
-            autocomplete="email"
-            required
+            id="username"
+            type="text"
+            name="username"
+            placeholder="yourusername"
+            autocomplete="username"
           />
         </label>
 
@@ -104,7 +104,7 @@
             <span>Remember me</span>
           </label>
 
-          <a class="link" href="#" aria-disabled="true" title="Hook this up later">
+          <a class="link" href="forgot-password.html">
             Forgot password?
           </a>
         </div>
