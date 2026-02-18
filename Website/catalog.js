@@ -22,12 +22,26 @@ document.addEventListener("DOMContentLoaded", async () => {
   } catch (err) {
     console.error(err);
     meBadge.textContent = "Not logged in";
+    window.location.href = "/Website/login.html";
   }
 
   document.getElementById("profileBtn").addEventListener("click", async () => {
     window.location.href = "/Website/profile.html";
   });
   document.getElementById("logoutBtn").addEventListener("click", async () => {
-    window.location.href = "/Website/login.html";
+    try {
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        credentials: "same-origin"
+      });
+
+      //After session is destroyed, redirect
+      window.location.href = "/Website/login.html";
+
+    } catch (err) {
+      console.error("Logout failed:", err);
+      window.location.href = "/Website/login.html";
+    }
   });
+
 });
