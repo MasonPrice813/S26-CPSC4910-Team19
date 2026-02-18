@@ -2,6 +2,9 @@ const express = require("express");
 const path = require("path");
 require("dotenv").config();
 const mysql = require("mysql2/promise");
+const bcrypt = require("bcrypt");
+const rateLimit = require("express-rate-limit");
+const crypto = require("crypto");
 
 const app = express();
 app.use(express.json());
@@ -214,6 +217,8 @@ app.post("/api/sponsor/applications/:id/approve", requireSponsor, async (req, re
 
     const a = apps[0];
 
+    const hashedPw = await bcrypt.hash(a.password, 12);
+
     const [userResult] = await conn.query(
       `INSERT INTO users
          (role, first_name, last_name, username, email, password, phone_number, sponsor)
@@ -225,7 +230,7 @@ app.post("/api/sponsor/applications/:id/approve", requireSponsor, async (req, re
         a.last_name,
         a.username,
         a.email,
-        a.password,
+        hashedPw,
         a.phone_number || null,
         a.sponsor,
       ]
@@ -277,6 +282,187 @@ app.post("/api/sponsor/applications/:id/reject", requireSponsor, async (req, res
   }
 });
 
+// ----------------- AUTH: LOGIN -----------------
+app.post("/api/auth/login", async (req, res) => {
+  const { username, password } = req.body || {};
+  if (!username || !password) {
+    return res.status(400).json({ message: "Username and password are required." });
+  }
+
+  try {
+    const [rows] = await pool.query(
+      `SELECT id, role, sponsor, password
+       FROM users
+       WHERE username = ?
+       LIMIT 1`,
+      [username]
+    );
+
+    if (rows.length === 0) {
+      return res.status(401).json({ message: "Invalid username or password." });
+    }
+
+    const user = rows[0];
+    const stored = user.password || "";
+
+    let valid = false;
+
+    // If bcrypt hash
+    if (stored.startsWith("$2a$") || stored.startsWith("$2b$") || stored.startsWith("$2y$")) {
+      valid = await bcrypt.compare(password, stored);
+    } else {
+      // Plaintext fallback (temporary compatibility)
+      valid = password === stored;
+    }
+
+    if (!valid) {
+      return res.status(401).json({ message: "Invalid username or password." });
+    }
+
+    // Auto-upgrade plaintext passwords to bcrypt
+    if (!(stored.startsWith("$2a$") || stored.startsWith("$2b$") || stored.startsWith("$2y$"))) {
+      const newHash = await bcrypt.hash(password, 12);
+      await pool.query(
+        `UPDATE users SET password = ? WHERE id = ?`,
+        [newHash, user.user_id]
+      );
+    }
+
+    return res.json({
+      ok: true,
+      user: {
+        id: user.id,
+        role: user.role,
+        sponsor: user.sponsor || null
+      }
+    });
+
+  } catch (err) {
+    console.error("login error:", err);
+    return res.status(500).json({ message: "Server error." });
+  }
+});
+
+// ----------------- FORGOT PASSWORD -----------------
+
+// Rate limit to prevent brute force attempts
+const forgotLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use("/api/auth/forgot", forgotLimiter);
+
+// In-memory reset sessions (OK for school/demo use)
+const resetSessions = new Map(); // resetId -> { user_id, expiresAt }
+const RESET_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+function normalizePhone(phone) {
+  return String(phone || "").replace(/\D/g, ""); // remove non-digits
+}
+
+function cleanupExpiredResetSessions() {
+  const now = Date.now();
+  for (const [key, val] of resetSessions.entries()) {
+    if (val.expiresAt <= now) {
+      resetSessions.delete(key);
+    }
+  }
+}
+
+// STEP 1: Verify username + email + phone_number
+app.post("/api/auth/forgot/verify", async (req, res) => {
+  cleanupExpiredResetSessions();
+
+  const { username, email, phone_number } = req.body || {};
+
+  if (!username || !email || !phone_number) {
+    return res.status(400).json({
+      message: "Username, email, and phone number are required."
+    });
+  }
+
+  try {
+    const [rows] = await pool.query(
+      `SELECT id, phone_number
+       FROM users
+       WHERE username = ? AND email = ?
+       LIMIT 1`,
+      [username, email]
+    );
+
+    if (rows.length === 0) {
+      return res.status(401).json({ message: "Verification failed." });
+    }
+
+    const dbPhone = normalizePhone(rows[0].phone_number);
+    const inputPhone = normalizePhone(phone_number);
+
+    if (dbPhone !== inputPhone) {
+      return res.status(401).json({ message: "Verification failed." });
+    }
+
+    const resetId = crypto.randomBytes(24).toString("hex");
+
+    resetSessions.set(resetId, {
+      user_id: rows[0].id,
+      expiresAt: Date.now() + RESET_TTL_MS
+    });
+
+    return res.json({ resetId });
+
+  } catch (err) {
+    console.error("forgot verify error:", err);
+    return res.status(500).json({ message: "Server error." });
+  }
+});
+
+// STEP 2: set new password for verified user
+app.post("/api/auth/forgot/reset", async (req, res) => {
+  cleanupExpiredResetSessions();
+
+  const { resetId, newPassword } = req.body || {};
+  if (!resetId || !newPassword) {
+    return res.status(400).json({ message: "Missing resetId or newPassword." });
+  }
+
+  const session = resetSessions.get(resetId);
+  if (!session || session.expiresAt <= Date.now()) {
+    return res.status(401).json({ message: "Reset session expired. Please verify again." });
+  }
+
+  const pw = String(newPassword);
+
+  // at least 8 chars, one lowercase, one uppercase, one number
+  const strongPw = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
+
+  if (!strongPw.test(pw)) {
+    return res.status(400).json({
+      message: "Password must be at least 8 characters and include 1 uppercase letter, 1 lowercase letter, and 1 number."
+    });
+  }
+
+  try {
+    const hash = await bcrypt.hash(newPassword, 12);
+
+    await pool.query(
+      `UPDATE users
+       SET password = ?
+       WHERE id = ?`,
+      [hash, session.user_id]
+    );
+
+    // One-time use
+    resetSessions.delete(resetId);
+
+    return res.json({ message: "Password updated." });
+  } catch (err) {
+    console.error("forgot reset error:", err);
+    return res.status(500).json({ message: "Server error." });
+  }
+});
 
 //Start server
 app.listen(PORT, "0.0.0.0", () => {

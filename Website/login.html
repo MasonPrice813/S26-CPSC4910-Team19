@@ -34,14 +34,15 @@
         <p class="muted">Sign in to manage your application and status.</p>
       </div>
 
-      <form class="form" action="#" method="post">
+      <form class="form" id="loginForm">
         <label class="field">
-          <span>Email</span>
+          <span>Username</span>
           <input
-            type="email"
-            name="email"
-            placeholder="you@example.com"
-            autocomplete="email"
+            id="username"
+            type="text"
+            name="username"
+            placeholder="yourusername"
+            autocomplete="username"
             required
           />
         </label>
@@ -69,7 +70,7 @@
             <span>Remember me</span>
           </label>
 
-          <a class="link" href="#" aria-disabled="true" title="Hook this up later">
+          <a class="link" href="forgot-password.html">
             Forgot password?
           </a>
         </div>
@@ -106,9 +107,10 @@
   </footer>
 
   <script>
-    // Tiny UX helpers only (no backend logic)
+    // Set year
     document.getElementById("year").textContent = new Date().getFullYear();
 
+    // Toggle password visibility
     const btn = document.getElementById("togglePassword");
     const input = document.getElementById("password");
 
@@ -118,6 +120,50 @@
       btn.textContent = isHidden ? "Hide" : "Show";
       btn.setAttribute("aria-label", isHidden ? "Hide password" : "Show password");
     });
-  </script>
+
+    // ---------------- LOGIN LOGIC ----------------
+
+    const loginForm = document.querySelector(".form");
+    const usernameInput = document.getElementById("username");
+    const passwordInput = document.getElementById("password");
+
+    // Add a message area
+    const msg = document.createElement("p");
+    msg.className = "muted small";
+    msg.style.marginTop = "10px";
+    loginForm.appendChild(msg);
+
+    loginForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      msg.textContent = "";
+
+      const payload = {
+        username: usernameInput.value.trim(),
+        password: passwordInput.value
+      };
+
+      try {
+        const res = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          msg.textContent = data.message || "Login failed.";
+          return;
+        }
+
+        msg.textContent = "Login successful!";
+        setTimeout(() => window.location.href = "application.html", 600);
+
+      } catch (err) {
+        msg.textContent = "Network error.";
+      }
+    });
+
+</script>
 </body>
 </html>
