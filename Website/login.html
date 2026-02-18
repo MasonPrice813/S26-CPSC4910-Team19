@@ -4,25 +4,59 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Sign In</title>
-<link rel="stylesheet" href="about-style.css" />
+  <link rel="stylesheet" href="about-style.css" />
+
+  <style>
+    /* Small logo brand */
+    .brand {
+      display: flex;
+      align-items: center;
+    }
+
+    .brand-logo-wrap {
+      position: relative;
+      width: 44px;
+      height: 44px;
+      border-radius: 10px;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,.2);
+    }
+
+    .brand-logo {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .brand-overlay {
+      position: absolute;
+      top: 2px;
+      left: 6px;
+      font-size: 14px;
+      font-weight: 800;
+      color: white;
+      text-shadow: 0 2px 6px rgba(0,0,0,.6);
+    }
+  </style>
 </head>
+
 <body>
+
   <!-- Top Nav -->
   <header class="navbar">
+
+    <!-- SMALL LOGO BRAND -->
     <div class="brand">
-      <div class="brand-mark">GD</div>
-      <div class="brand-text">
-        <div class="brand-name">Good Driver</div>
-        <div class="brand-sub">Application Portal</div>
+      <div class="brand-logo-wrap">
+        <img src="/Images/main_logo.png" alt="Good Driver Logo" class="brand-logo" />
       </div>
     </div>
 
-<nav class="nav-actions">
-  <a href="about.html" class="btn btn-primary">About</a>
-  <a href="application.html" class="btn btn-primary">Apply Now!</a>
-  <a href="login.html" class="btn btn-primary">Sign In</a>
-</nav>
-
+    <nav class="nav-actions">
+      <a href="about.html" class="btn btn-primary">About</a>
+      <a href="application.html" class="btn btn-primary">Apply Now!</a>
+      <a href="login.html" class="btn btn-primary">Sign In</a>
+    </nav>
 
   </header>
 
@@ -35,6 +69,7 @@
       </div>
 
       <form class="form" action="#" method="post">
+
         <label class="field">
           <span>Email</span>
           <input
@@ -81,8 +116,12 @@
         <a class="secondary-btn" href="application.html">Create an application</a>
 
         <p class="fineprint">
-          By signing in, you agree to our <a class="link" href="#">Terms</a> and <a class="link" href="#">Privacy Policy</a>.
+          By signing in, you agree to our
+          <a class="link" href="#">Terms</a>
+          and
+          <a class="link" href="#">Privacy Policy</a>.
         </p>
+
       </form>
     </section>
 
@@ -99,15 +138,18 @@
         </p>
       </div>
     </aside>
+
   </main>
 
   <footer class="footer">
-    <span class="muted small">© <span id="year"></span> Good Driver · All rights reserved</span>
+    <span class="muted small">
+      © <span id="year"></span> Good Driver · All rights reserved
+    </span>
   </footer>
 
   <script>
-    // Tiny UX helpers only (no backend logic)
-    document.getElementById("year").textContent = new Date().getFullYear();
+    document.getElementById("year").textContent =
+      new Date().getFullYear();
 
     const btn = document.getElementById("togglePassword");
     const input = document.getElementById("password");
@@ -116,8 +158,12 @@
       const isHidden = input.type === "password";
       input.type = isHidden ? "text" : "password";
       btn.textContent = isHidden ? "Hide" : "Show";
-      btn.setAttribute("aria-label", isHidden ? "Hide password" : "Show password");
+      btn.setAttribute(
+        "aria-label",
+        isHidden ? "Hide password" : "Show password"
+      );
     });
   </script>
+
 </body>
 </html>
