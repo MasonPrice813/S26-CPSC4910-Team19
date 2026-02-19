@@ -7,6 +7,7 @@ async function getJSON(url) {
 document.addEventListener("DOMContentLoaded", async () => {
   const meBadge = document.getElementById("meBadge");
   const pendingBtn = document.getElementById("pendingAppsBtn");
+  const createSponsorBtn = document.getElementById("createSponsorBtn");
 
   try {
     const me = await getJSON("/api/me");
@@ -17,6 +18,11 @@ document.addEventListener("DOMContentLoaded", async () => {
       pendingBtn.style.display = "inline-block";
       pendingBtn.addEventListener("click", () => {
         window.location.href = "/Website/sponsor-applications.html";
+      });
+
+      createSponsorBtn.style.display = "inline-block";
+      createSponsorBtn.addEventListener("click", () => {
+        window.location.href = "/Website/sponsor-create.html";
       });
     }
   } catch (err) {

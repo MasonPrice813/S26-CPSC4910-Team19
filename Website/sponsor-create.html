@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Create Sponsor User — Driver Incentive Program</title>
+
+    <link rel="stylesheet" href="about-style.css" />
+</head>
+
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">Driver Incentive Program</div>
+        <div class="nav-actions">
+        <button class="btn btn-primary" id="backBtn" type="button">Back</button>
+        </div>
+    </nav>
+
+    <main class="container">
+
+        <section class="header">
+            <h1>Create Sponsor User</h1>
+            <p class="subtitle" id="sponsorBadge">Loading…</p>
+        </section>
+
+        <section class="content-box form-card">
+            <form class="application-form" id="createForm">
+
+                <fieldset class="form-section">
+                    <legend>Account Details</legend>
+
+                    <p class="helper-text">
+                        This creates another Sponsor account for <strong id="sponsorName">…</strong>.
+                        Sponsor cannot be changed here.
+                    </p>
+
+                    <div class="form-group">
+                        <label for="first_name">First Name</label>
+                        <input
+                        id="first_name"
+                        type="text"
+                        placeholder="Enter first name"
+                        required
+                        />
+                    </div>
+
+                    <div class="form-group">
+                        <label for="last_name">Last Name</label>
+                        <input
+                        id="last_name"
+                        type="text"
+                        placeholder="Enter last name"
+                        required
+                        />
+                    </div>
+
+                    <div class="form-group">
+                        <label for="username">Username</label>
+                        <input
+                        id="username"
+                        type="text"
+                        placeholder="Enter username"
+                        required
+                        />
+                    </div>
+
+                    <div class="form-group">
+                        <label for="email">Email Address</label>
+                        <input
+                        id="email"
+                        type="email"
+                        placeholder="example@email.com"
+                        required
+                        />
+                    </div>
+
+                    <div class="form-group">
+                        <label for="phone_number">Phone Number</label>
+                        <input
+                        id="phone_number"
+                        type="tel"
+                        placeholder="(123) 456-7890"
+                        required
+                        />
+                    </div>
+
+                    <div class="form-group">
+                        <label for="password">Password</label>
+                        <input
+                        id="password"
+                        type="password"
+                        placeholder="Enter password"
+                        required
+                        />
+                    </div>
+                </fieldset>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Create Sponsor User</button>
+                    <button type="button" class="btn btn-outline" id="cancelBtn">Cancel</button>
+                </div>
+
+                <div class="msg muted" id="msg" style="margin-top: 12px;"></div>
+            </form>
+        </section>
+
+    </main>
+
+    <script src="/Website/sponsor-create.js"></script>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+        const cancelBtn = document.getElementById("cancelBtn");
+        const backBtn = document.getElementById("backBtn");
+        if (cancelBtn && backBtn) cancelBtn.addEventListener("click", () => backBtn.click());
+        });
+    </script>
+
+</body>
+</html>

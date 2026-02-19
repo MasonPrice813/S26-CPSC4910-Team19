@@ -91,6 +91,78 @@ function requireSponsor(req, res, next) {
   next();
 }
 
+//Sponsor only: create another sponsor user under the same sponsor
+app.post("/api/sponsor/sponsor-users", requireSponsor, async (req, res) => {
+  const {
+    first_name,
+    last_name,
+    username,
+    password,
+    email,
+    phone_number
+  } = req.body || {};
+
+  if (!first_name || !last_name || !username || !password || !email || !phone_number) {
+    return res.status(400).json({ error: "Missing required fields." });
+  }
+
+  const sponsorName = req.me.sponsor;
+  if (!sponsorName) {
+    return res.status(400).json({ error: "Your sponsor account is missing a sponsor value." });
+  }
+
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    //Hash password
+    const hashedPw = await bcrypt.hash(password, 12);
+
+    //Insert into users
+    const [userResult] = await conn.query(
+      `INSERT INTO users
+         (role, first_name, last_name, username, email, password, phone_number, sponsor)
+       VALUES
+         (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        "Sponsor",
+        first_name,
+        last_name,
+        username,
+        email,
+        hashedPw,
+        phone_number,
+        sponsorName
+      ]
+    );
+
+    const newUserId = userResult.insertId;
+
+    //Insert into sponsors
+    await conn.query(
+      `INSERT INTO sponsors (user_id)
+       VALUES (?)`,
+      [newUserId]
+    );
+
+    await conn.commit();
+    return res.status(201).json({ ok: true, user_id: newUserId });
+  } catch (err) {
+    await conn.rollback();
+
+    //Duplicate errors
+    if (err && err.code === "ER_DUP_ENTRY") {
+      return res.status(409).json({ error: "Username or email already exists." });
+    }
+
+    console.error("create sponsor user error:", err);
+    return res.status(500).json({ error: "Could not create sponsor user." });
+  } finally {
+    conn.release();
+  }
+});
+
+
 //Only sponsors can modify the schema
 app.put(
   "/api/application-schema",
