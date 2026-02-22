@@ -19,48 +19,89 @@ async function postJSON(url, body) {
 
 function card(app) {
   const div = document.createElement("div");
-  div.className = "card";
+  div.className = "card app-card";
 
-  const createdAt = app.created_at ? new Date(app.created_at).toLocaleString() : "";
+  const safe = (v) => (v === null || v === undefined || v === "" ? "<span class='muted'>n/a</span>" : escapeHtml(v));
+  const safePlain = (v) => (v === null || v === undefined || v === "" ? "n/a" : String(v));
+
+  const formatDateMaybe = (val) => {
+    if (!val) return "<span class='muted'>n/a</span>";
+    const d = new Date(val);
+    if (!isNaN(d.getTime())) return escapeHtml(d.toLocaleDateString());
+    return escapeHtml(String(val));
+  };
 
   div.innerHTML = `
-    <div class="row">
-        <div>
-        <div><strong>${app.first_name} ${app.last_name}</strong> <span class="muted">(${app.email})</span></div>
-        <div class="muted">Application ID: <code>${app.id}</code></div>
+    <div class="app-header">
+      <div>
+        <div class="app-title">
+          ${escapeHtml(app.first_name || "")} ${escapeHtml(app.last_name || "")}
+          <span class="muted">(${escapeHtml(app.email || "n/a")})</span>
         </div>
-        <div class="actions">
-        <button class="btn primary" data-action="approve">Approve</button>
-        <button class="btn danger" data-action="reject">Reject</button>
-        </div>
+        <div class="muted app-subtitle">Application ID: <code>${escapeHtml(app.id)}</code></div>
+      </div>
+
+      <div class="app-actions">
+        <button class="btn btn-primary" data-action="approve">Approve</button>
+        <button class="btn btn-primary" data-action="reject">Reject</button>
+      </div>
     </div>
 
-    <div class="field"><strong>Username:</strong> ${app.username || "<span class='muted'>n/a</span>"}</div>
-    <div class="field"><strong>Phone:</strong> ${app.phone_number || "<span class='muted'>n/a</span>"}</div>
-    <div class="field"><strong>Sponsor:</strong> ${app.sponsor || "<span class='muted'>n/a</span>"}</div>
+    <div class="app-grid">
+      <div class="app-label">Username</div>
+      <div class="app-value">${safe(app.username)}</div>
 
-    <hr />
+      <div class="app-label">Phone</div>
+      <div class="app-value">${safe(app.phone_number)}</div>
 
-    <div class="field"><strong>SSN (last 4):</strong> ${app.ssn_last4 || "<span class='muted'>n/a</span>"}</div>
-    <div class="field"><strong>Age:</strong> ${app.age ?? "<span class='muted'>n/a</span>"}</div>
-    <div class="field"><strong>DOB:</strong> ${app.dob || "<span class='muted'>n/a</span>"}</div>
+      <div class="app-label">Sponsor</div>
+      <div class="app-value">${safe(app.sponsor)}</div>
 
-    <div class="field"><strong>DL Number:</strong> ${app.dl_num || "<span class='muted'>n/a</span>"}</div>
-    <div class="field"><strong>DL Expiration:</strong> ${app.dl_expiration || "<span class='muted'>n/a</span>"}</div>
+      <div class="app-section-divider"></div>
 
-    <div class="field"><strong>Driving Record:</strong><br/>${app.driving_record ? `<pre>${escapeHtml(app.driving_record)}</pre>` : "<span class='muted'>n/a</span>"}</div>
-    <div class="field"><strong>Criminal History:</strong><br/>${app.criminal_history ? `<pre>${escapeHtml(app.criminal_history)}</pre>` : "<span class='muted'>n/a</span>"}</div>
-    `;
+      <div class="app-label">SSN (last 4)</div>
+      <div class="app-value">${safe(app.ssn_last4)}</div>
 
+      <div class="app-label">Age</div>
+      <div class="app-value">${app.age === 0 || app.age ? escapeHtml(app.age) : "<span class='muted'>n/a</span>"}</div>
+
+      <div class="app-label">DOB</div>
+      <div class="app-value">${formatDateMaybe(app.dob)}</div>
+
+      <div class="app-label">DL Number</div>
+      <div class="app-value">${safe(app.dl_num)}</div>
+
+      <div class="app-label">DL Expiration</div>
+      <div class="app-value">${formatDateMaybe(app.dl_expiration)}</div>
+
+      <div class="app-block">
+        <div class="app-label">Driving Record</div>
+        ${
+          app.driving_record
+            ? `<pre class="app-pre">${escapeHtml(app.driving_record)}</pre>`
+            : `<span class="muted">n/a</span>`
+        }
+      </div>
+
+      <div class="app-block">
+        <div class="app-label">Criminal History</div>
+        ${
+          app.criminal_history
+            ? `<pre class="app-pre">${escapeHtml(app.criminal_history)}</pre>`
+            : `<span class="muted">n/a</span>`
+        }
+      </div>
+    </div>
+  `;
 
   div.querySelector('[data-action="approve"]').addEventListener("click", async () => {
-    if (!confirm(`Approve application ${app.id}? This will move them to users + drivers and remove from applications.`)) return;
+    if (!confirm(`Approve application ${safePlain(app.id)}? This will move them to users + drivers and remove from applications.`)) return;
     await postJSON(`/api/sponsor/applications/${app.id}/approve`);
     div.remove();
   });
 
   div.querySelector('[data-action="reject"]').addEventListener("click", async () => {
-    if (!confirm(`Reject application ${app.id}? This will delete it from applications.`)) return;
+    if (!confirm(`Reject application ${safePlain(app.id)}? This will delete it from applications.`)) return;
     await postJSON(`/api/sponsor/applications/${app.id}/reject`);
     div.remove();
   });
