@@ -139,6 +139,14 @@ body {
   gap: 18px;
 }
 
+.profile-pic-container {
+  width:150px;
+  height:150px;
+  border-radius:50%;
+  overflow:hidden;
+  cursor:grab;
+}
+
 /* ===== Cards / Sections ===== */
 .content-box,
 .card{

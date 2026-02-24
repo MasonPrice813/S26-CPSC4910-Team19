@@ -1,10 +1,11 @@
 const sectionsContainer = document.getElementById("sections-container");
+let cropMode = false;
 // PLACE TO ADD REST OF PROFILE INFORMATION
 let sections = [
     {
-    id: "profilePicture",
-    title: "Profile Picture",
-    content: ""
+        id: "profilePicture",
+        title: "Profile Picture",
+        content: ""
     },
     {
         id: "userbio",
@@ -24,6 +25,11 @@ let sections = [
     {
         id: "useremail",
         title: "Email",
+        content: ""
+    },
+    {
+        id: "userpassword",
+        title: "Change Password",
         content: ""
     },
     {
@@ -72,13 +78,56 @@ function renderingSections() {
                 profileButtons = `
                     <button class="btn btn-outline edit-btn">Change</button>
                     <button class="btn btn-secondary remove-btn">Remove</button>
-                    `;
-                    profileContent = `
-                    <img src="${section.content}" 
-                        style="margin-top:12px; width:150px; height:150px; object-fit:cover; border-radius:50%;" />
-                    `;
+                    <button class="btn btn-primary crop-btn">Edit Crop</button>
+
+                `;
+                profileContent = `
+                    <img id="profile-img" src="${section.content}" 
+                        style="margin-top:12px; width:150px; height:150px; object-fit:cover; object-position:${section.cropX || "50%"} ${section.cropY || "50%"}; border-radius:50%;" />
+                `;
             }
 
+        }
+        else if (section.id === "userpassword") {
+            profileButtons = `
+                <button class="btn btn-primary pass-btn">Edit</button>
+            `;
+            profileContent = `
+                <p style="margin-top:12px; color: var(--muted);">
+                Must use at least one uppercase letter, one lowercase letter, one number, and be at least 8 characters long
+                </p>
+                <form class="form" id="resetForm" style="display:none;">
+                    <label class="field">
+                    <span>New password</span>
+                    <input
+                        id="newPassword"
+                        type="password"
+                        name="newPassword"
+                        minlength="8"
+                        pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}"
+                        title="Must be 8+ characters and include 1 uppercase letter, 1 lowercase letter, and 1 number."
+                        required
+                        />
+                    </label>
+
+                    <label class="field">
+                    <span>Confirm new password</span>
+                    <input
+                        id="confirmPassword"
+                        type="password"
+                        name="confirmPassword"
+                        minlength="8"
+                        pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}"
+                        title="Must be 8+ characters and include 1 uppercase letter, 1 lowercase letter, and 1 number."
+                        required
+                        />
+                    </label>
+
+                    <button class="primary-btn" type="submit">Update password</button>
+
+                    <p class="muted small" id="resetHint" style="margin-top: 10px;"></p>
+                </form>
+            `;
         }
         else {
             if (section.content.trim() === "") {
@@ -182,6 +231,74 @@ sectionsContainer.addEventListener("click", function(e) {
     if (e.target.classList.contains("remove-btn")) {
         removeSection(id);
     }
+
 });
 
+document.addEventListener("mousedown", function (e) {
+    if (!cropMode) {
+        return;
+    }
+    const img = document.getElementById("profile-img");
+    if (!img) {
+        return;
+    }
+    const container = img.parentElement;
+    if (!container.contains(e.target)) {
+        return;
+    }
+
+    function moveProfPic(e) {
+        // Getting all variables
+        const rect = container.getBoundingClientRect();
+        const x = ((e.clientX - rect.left) / rect.width) * 100;
+        const y = ((e.clientY - rect.top) / rect.height) * 100;
+        const xClamped = Math.max(0, Math.min(100, x));
+        const yClamped = Math.max(0, Math.min(100, y));
+
+        // Changing the position of the user's picture shown
+        img.style.objectPosition = `${xClamped}% ${yClamped}%`;
+        const profPicSection = sections.find(s => s.id === "profilePicture");
+        profPicSection.cropX = `${xClamped}%`;
+        profPicSection.cropY = `${yClamped}%`;
+    }
+
+    function stopMoveProfPic() {
+        document.removeEventListener("mousemove", moveProfPic);
+        document.removeEventListener("mouseup", stopMoveProfPic);
+    }
+    document.addEventListener("mousemove", moveProfPic);
+    document.addEventListener("mouseup", stopMoveProfPic);
+});
+
+
 renderingSections();
+
+document.addEventListener("click", function (e) {
+    if (e.target.classList.contains("crop-btn")) {
+        cropMode = !cropMode;
+        const container = document.querySelector(".profile-pic-container");
+        // Switching options 
+        if (cropMode) {
+            e.target.textContent = "Done";
+            if (container) {
+                container.style.cursor = "crosshair";
+            }
+        } 
+        else {
+            e.target.textContent = "Edit Crop";
+            if (container) {
+                container.style.cursor = "default";
+            }
+        }
+    }
+});
+
+document.addEventListener("click", function (e) {
+    if (e.target.classList.contains("pass-btn")) {
+        document.getElementById("resetForm").style.display = "block";
+    }
+});
+
+document.getElementById("catalogBtn").addEventListener("click", async () => {
+    window.location.href = "/Website/catalog.html";
+});

@@ -9,6 +9,18 @@
   <link rel="stylesheet" href="about-style.css" />
 </head>
 
+<body>
+    <div class="navbar">
+      <div>
+        <strong>Good Driver Incentive Program</strong>
+        <span class="muted" id="meBadge" style="margin-left: 10px;">Loading user...</span>
+      </div>
+
+      <div class="right">
+        <button id="catalogBtn" class="btn btn-primary">Catalog</button>
+      </div>
+    </div>
+
 <main class="container">
   <!-- Page Header -->
   <section class="header">
@@ -21,7 +33,57 @@
     <!-- Sections area for Profile.js to populate-->
     <div id="sections-container"></div>
 
+
   </main>
+  <script>
+    // Using logic from forgot password.html script
+    const resetForm = document.getElementById("resetForm");
+    const msg = document.getElementById("message");
+    const resetHint = document.getElementById("resetHint");
+
+
+    // We store a short-lived resetId returned by the server (not the user_id).
+    let resetId = null;
+
+    resetForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        msg.textContent = "";
+
+        const newPassword = document.getElementById("newPassword").value;
+        const confirmPassword = document.getElementById("confirmPassword").value;
+
+        if (newPassword !== confirmPassword) {
+            msg.textContent = "Passwords do not match.";
+            return;
+        }
+
+        const strongPw = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
+        if (!strongPw.test(newPassword)) {
+            msg.textContent = "Password must be 8+ chars and include 1 uppercase, 1 lowercase, and 1 number.";
+            return;
+        }
+
+        try {
+        const res = await fetch("/api/auth/forgot/reset", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ resetId, newPassword }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+            msg.textContent = data?.message || "Password reset failed.";
+            return;
+        }
+
+        msg.textContent = "Password updated!";
+        resetForm.reset();
+        } catch (err) {
+        msg.textContent = "Network error. Try again.";
+        }
+    });
+  </script>
   <script src="profile.js"></script>
 </body>
 </html>
