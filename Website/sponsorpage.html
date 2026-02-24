@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sponsor Dashboard — Driver Incentive Program</title>
+  <link rel="stylesheet" href="/Website/about-style.css" />
+  <style>
+    .driver-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 14px;
+    }
+
+    .driver-table th,
+    .driver-table td {
+      padding: 12px 10px;
+      text-align: left;
+      border-bottom: 1px solid rgba(255,255,255,0.10);
+    }
+
+    .driver-table th {
+      font-weight: 700;
+      color: var(--muted);
+      font-size: 14px;
+      letter-spacing: .4px;
+    }
+
+    .driver-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .table-actions-global {
+      margin-top: 18px;
+      padding-top: 16px;
+      border-top: 1px solid rgba(255,255,255,0.10);
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .application-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 14px;
+    }
+
+    .application-table th,
+    .application-table td {
+      padding: 12px 10px;
+      text-align: left;
+      border-bottom: 1px solid rgba(255,255,255,0.10);
+    }
+
+    .application-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Navigation -->
+  <nav class="navbar">
+    <div class="nav-brand">Driver Incentive Program</div>
+
+    <div class="nav-actions">
+      <a href="#" class="btn btn-secondary">Dashboard</a>
+      <a href="#" class="btn btn-secondary">About</a>
+      <a href="#" class="btn btn-primary">Profile</a>
+    </div>
+  </nav>
+
+  <main class="container">
+
+    <!-- Sponsor Header -->
+    <section class="header">
+      <h1 style="font-size: 42px;">Example Sponsor</h1>
+      <p class="subtitle">Sponsor Dashboard</p>
+    </section>
+
+    <!-- Quick Stats -->
+    <section class="content-box">
+      <h2>Quick Stats</h2>
+
+      <div class="row">
+        <div>
+          <h3>Active Drivers</h3>
+          <p class="muted">128</p>
+        </div>
+
+        <div>
+          <h3>Total Points Awarded</h3>
+          <p class="muted">54,320</p>
+        </div>
+
+        <div>
+          <h3>Pending Applications</h3>
+          <p class="muted">6</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Driver Management -->
+    <section class="content-box">
+      <h2>Driver Management</h2>
+
+      <table class="driver-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Points</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+
+          <tr>
+            <td>John Smith</td>
+            <td>john@example.com</td>
+            <td>123</td>
+            <td>
+              <div class="driver-actions">
+                <button class="btn btn-secondary">Edit</button>
+                <button class="btn btn-primary">+ Points</button>
+                <button class="btn btn-secondary">− Points</button>
+              </div>
+            </td>
+          </tr>
+
+          <tr>
+            <td>Maria Lopez</td>
+            <td>maria@example.com</td>
+            <td>375</td>
+            <td>
+              <div class="driver-actions">
+                <button class="btn btn-secondary">Edit</button>
+                <button class="btn btn-primary">+ Points</button>
+                <button class="btn btn-secondary">− Points</button>
+              </div>
+            </td>
+          </tr>
+
+        </tbody>
+      </table>
+
+      <!-- Global Controls -->
+      <div class="table-actions-global">
+        <button class="btn btn-primary">Award Points to All Drivers</button>
+        <button class="btn btn-secondary">Deduct Points from All Drivers</button>
+      </div>
+
+    </section>
+
+    <!-- Applications Section -->
+    <section class="content-box">
+      <h2>Driver Applications</h2>
+
+      <table class="application-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Submission Date</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+
+          <tr>
+            <td>David Miller</td>
+            <td>david@example.com</td>
+            <td>Feb 20, 2026</td>
+            <td>
+              <div class="application-actions">
+                <button class="btn btn-primary">Approve</button>
+                <button class="btn btn-secondary">Reject</button>
+                <button class="btn btn-secondary">View</button>
+              </div>
+            </td>
+          </tr>
+
+        </tbody>
+      </table>
+
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <p>&copy; 2026 — Driver Incentive Program</p>
+    </footer>
+
+  </main>
+
+</body>
+</html>
