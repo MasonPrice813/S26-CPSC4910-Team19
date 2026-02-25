@@ -595,6 +595,14 @@ app.get("/api/me/profile", requireLogin, async (req, res) => {
   }
 });
 
+function requireAdmin(req, res, next) {
+  const me = req.session.user;
+  if (!me) return res.status(401).json({ error: "Not logged in" });
+  if (me.role !== "Admin") return res.status(403).json({ error: "Admins only" });
+  req.me = me;
+  next();
+}
+
 //Change password while logged in
 app.post("/api/me/password", requireLogin, async (req, res) => {
   const { newPassword } = req.body || {};
@@ -615,6 +623,171 @@ app.post("/api/me/password", requireLogin, async (req, res) => {
   } catch (err) {
     console.error("me/password error:", err);
     res.status(500).json({ message: "Server error." });
+  }
+});
+
+//Admin: list/search users across all sponsors
+app.get("/api/admin/users", requireAdmin, async (req, res) => {
+  const search = String(req.query.search || "").trim();
+  const role = String(req.query.role || "All").trim();
+
+  const where = [];
+  const params = [];
+
+  //Logged in user cannot search/edit themselves
+  where.push("u.id <> ?");
+  params.push(req.me.id);
+
+  if (role && role !== "All") {
+    where.push("u.role = ?");
+    params.push(role);
+  }
+
+  if (search) {
+    where.push("(u.first_name LIKE ? OR u.last_name LIKE ? OR u.username LIKE ? OR u.email LIKE ?)");
+    const q = `%${search}%`;
+    params.push(q, q, q, q);
+  }
+
+  const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+
+  try {
+    const [rows] = await pool.query(
+      `
+      SELECT
+        u.id,
+        u.role,
+        u.first_name,
+        u.last_name,
+        u.username,
+        u.email,
+        u.phone_number,
+        u.sponsor
+      FROM users u
+      ${whereSql}
+      ORDER BY u.last_name ASC, u.first_name ASC
+      LIMIT 200
+      `,
+      params
+    );
+
+    res.json({ users: rows });
+  } catch (err) {
+    console.error("admin users list error:", err);
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
+function roleTable(role) {
+  if (role === "Driver") return "drivers";
+  if (role === "Sponsor") return "sponsors";
+  if (role === "Admin") return "admins";
+  return null;
+}
+
+app.patch("/api/admin/users/:id/role", requireAdmin, async (req, res) => {
+  const userId = Number(req.params.id);
+  const newRole = String(req.body?.role || "").trim();
+
+  if (!Number.isFinite(userId)) return res.status(400).json({ error: "Invalid user id" });
+  if (!["Driver", "Sponsor", "Admin"].includes(newRole)) {
+    return res.status(400).json({ error: "Invalid role" });
+  }
+
+  //Prevent admin from locking themselves out
+  if (req.me.id === userId && newRole !== "Admin") {
+    return res.status(400).json({ error: "You cannot change your own role away from Admin." });
+  }
+
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    const [rows] = await conn.query(
+      `SELECT id, role FROM users WHERE id = ? FOR UPDATE`,
+      [userId]
+    );
+    if (rows.length === 0) {
+      await conn.rollback();
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const oldRole = rows[0].role;
+    if (oldRole === newRole) {
+      await conn.rollback();
+      return res.json({ ok: true, message: "No change" });
+    }
+
+    const oldTable = roleTable(oldRole);
+    const newTable = roleTable(newRole);
+
+    //Update users role. If promoting to Admin, sponsor becomes NULL
+    if (newRole === "Admin") {
+      await conn.query(`UPDATE users SET role = ?, sponsor = NULL WHERE id = ?`, [newRole, userId]);
+    } else {
+      await conn.query(`UPDATE users SET role = ? WHERE id = ?`, [newRole, userId]);
+    }
+
+    //Remove from old role table
+    if (oldTable) {
+      await conn.query(`DELETE FROM ${oldTable} WHERE user_id = ?`, [userId]);
+    }
+
+    // Add to new role table
+    if (newTable) {
+      await conn.query(`INSERT IGNORE INTO ${newTable} (user_id) VALUES (?)`, [userId]);
+    }
+
+    await conn.commit();
+    res.json({ ok: true, user_id: userId, oldRole, newRole });
+  } catch (err) {
+    await conn.rollback();
+    console.error("admin role change error:", err);
+    res.status(500).json({ error: "Could not change role" });
+  } finally {
+    conn.release();
+  }
+});
+
+app.delete("/api/admin/users/:id", requireAdmin, async (req, res) => {
+  const userId = Number(req.params.id);
+  if (!Number.isFinite(userId)) return res.status(400).json({ error: "Invalid user id" });
+
+  //Prevent deleting self
+  if (req.me.id === userId) {
+    return res.status(400).json({ error: "You cannot delete your own account." });
+  }
+
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    const [rows] = await conn.query(
+      `SELECT id, role FROM users WHERE id = ? FOR UPDATE`,
+      [userId]
+    );
+    if (rows.length === 0) {
+      await conn.rollback();
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const role = rows[0].role;
+    const table = roleTable(role);
+
+    if (table) {
+      await conn.query(`DELETE FROM ${table} WHERE user_id = ?`, [userId]);
+    }
+
+    await conn.query(`DELETE FROM users WHERE id = ?`, [userId]);
+
+    await conn.commit();
+    res.json({ ok: true, deleted: userId });
+  } catch (err) {
+    await conn.rollback();
+    console.error("admin delete user error:", err);
+    res.status(500).json({ error: "Could not delete user" });
+  } finally {
+    conn.release();
   }
 });
 

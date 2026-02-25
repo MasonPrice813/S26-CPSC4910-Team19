@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Manage Users</title>
+    <link rel="stylesheet" href="/Website/about-style.css" />
+</head>
+
+<body>
+    <div class="navbar">
+        <div>
+            <strong>Good Driver Incentive Program</strong>
+            <span class="muted" id="meBadge" style="margin-left: 10px;">Loading user...</span>
+        </div>
+
+        <div class="right">
+            <button id="backBtn" class="btn btn-primary">Back to Catalog</button>
+            <button id="logoutBtn" class="btn btn-primary">Log out</button>
+        </div>
+    </div>
+    <main class="container">
+        <div class="content-box">
+            <h2>Manage Users</h2>
+            <p class="muted">Search users, change roles, or delete accounts.</p>
+
+            <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:12px;">
+                <input id="searchInput" class="input" placeholder="Search name, username, or email..." style="flex:1; min-width:220px;" />
+                <select id="roleFilter" class="input" style="min-width:180px;">
+                    <option value="All">All roles</option>
+                    <option value="Driver">Driver</option>
+                    <option value="Sponsor">Sponsor</option>
+                    <option value="Admin">Admin</option>
+                </select>
+                <button id="searchBtn" class="btn btn-primary">Search</button>
+            </div>
+
+            <p id="statusMsg" class="muted small" style="margin-top:10px;"></p>
+        </div>
+
+        <div class="content-box">
+            <div id="results"></div>
+        </div>
+    </main>
+    
+    <script src="/Website/admin-users.js"></script>
+</body>
+</html>
