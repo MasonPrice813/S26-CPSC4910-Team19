@@ -44,6 +44,43 @@ let sections = [
     }
 ];
 
+async function getJSON(url) {
+  const res = await fetch(url);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || data?.message || `${url} -> ${res.status}`);
+  return data;
+}
+
+function setSectionContent(id, value) {
+  const s = sections.find(x => x.id === id);
+  if (!s) return;
+  s.content = (value ?? "").toString();
+}
+
+async function loadProfileFromSession() {
+  try {
+    const data = await getJSON("/api/me/profile");
+    const u = data.user;
+
+    const meBadge = document.getElementById("meBadge");
+    if (meBadge) {
+      meBadge.textContent = `${u.first_name} ${u.last_name} • ${u.role}`;
+    }
+
+    const profileName = document.getElementById("profileName");
+    if (profileName) profileName.textContent = `${u.first_name} ${u.last_name}`;
+
+    setSectionContent("userphone", u.phone_number || "");
+    setSectionContent("useremail", u.email || "");
+    setSectionContent("sponsor", u.sponsor || "None");
+
+    renderingSections();
+  } catch (err) {
+    console.error(err);
+    window.location.href = "/Website/login.html";
+  }
+}
+
 function renderingSections() {
     sectionsContainer.innerHTML = "";
     // Going through each section and determining if the add button should be shown or the edit/remove
@@ -270,8 +307,43 @@ document.addEventListener("mousedown", function (e) {
     document.addEventListener("mouseup", stopMoveProfPic);
 });
 
+loadProfileFromSession();
 
-renderingSections();
+document.addEventListener("submit", async (e) => {
+  if (e.target && e.target.id === "resetForm") {
+    e.preventDefault();
+
+    const hint = document.getElementById("resetHint");
+    if (hint) hint.textContent = "";
+
+    const newPassword = document.getElementById("newPassword").value;
+    const confirmPassword = document.getElementById("confirmPassword").value;
+
+    if (newPassword !== confirmPassword) {
+      if (hint) hint.textContent = "Passwords do not match.";
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/me/password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newPassword }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (hint) hint.textContent = data?.message || "Password update failed.";
+        return;
+      }
+
+      if (hint) hint.textContent = "Password updated!";
+      e.target.reset();
+    } catch (err) {
+      if (hint) hint.textContent = "Network error. Try again.";
+    }
+  }
+});
 
 document.addEventListener("click", function (e) {
     if (e.target.classList.contains("crop-btn")) {

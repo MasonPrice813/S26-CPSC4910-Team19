@@ -557,6 +557,67 @@ app.post("/api/auth/forgot/reset", async (req, res) => {
   }
 });
 
+//Helper: require login
+function requireLogin(req, res, next) {
+  if (!req.session.user) return res.status(401).json({ error: "Not logged in" });
+  next();
+}
+
+//Full profile for the currently logged-in user
+app.get("/api/me/profile", requireLogin, async (req, res) => {
+  try {
+    const userId = req.session.user.id;
+
+    const [rows] = await pool.query(
+      `SELECT id, role, first_name, last_name, username, email, phone_number, sponsor
+       FROM users
+       WHERE id = ?
+       LIMIT 1`,
+      [userId]
+    );
+
+    if (rows.length === 0) return res.status(404).json({ error: "User not found" });
+
+    const u = rows[0];
+
+    req.session.user = {
+      ...req.session.user,
+      id: u.id,
+      username: u.username,
+      role: u.role,
+      sponsor: u.sponsor || null,
+    };
+
+    res.json({ user: u });
+  } catch (err) {
+    console.error("me/profile error:", err);
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
+//Change password while logged in
+app.post("/api/me/password", requireLogin, async (req, res) => {
+  const { newPassword } = req.body || {};
+  const pw = String(newPassword || "");
+
+  const strongPw = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
+  if (!strongPw.test(pw)) {
+    return res.status(400).json({
+      message:
+        "Password must be at least 8 characters and include 1 uppercase letter, 1 lowercase letter, and 1 number."
+    });
+  }
+
+  try {
+    const hash = await bcrypt.hash(pw, 12);
+    await pool.query(`UPDATE users SET password = ? WHERE id = ?`, [hash, req.session.user.id]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("me/password error:", err);
+    res.status(500).json({ message: "Server error." });
+  }
+});
+
 
 //Start server
 app.listen(PORT, "0.0.0.0", () => {
