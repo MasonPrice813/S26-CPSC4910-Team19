@@ -47,6 +47,7 @@ async function loadProducts() {
 
 document.addEventListener("DOMContentLoaded", async () => {
   const meBadge = document.getElementById("meBadge");
+  const manageUsersBtn = document.getElementById("manageUsersBtn");
   const pendingBtn = document.getElementById("pendingAppsBtn");
   const createSponsorBtn = document.getElementById("createSponsorBtn");
 
@@ -54,6 +55,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     const me = await getJSON("/api/me");
     const sponsorText = me.sponsor ? ` • ${me.sponsor}` : "";
     meBadge.textContent = `Logged in as: ${me.role}${sponsorText}`;
+
+    if (me.role === "Admin") {
+      manageUsersBtn.style.display = "inline-block";
+      manageUsersBtn.addEventListener("click", () => {
+        window.location.href = "/Website/admin-users.html";
+      });
+    }
 
     if (me.role === "Sponsor") {
       pendingBtn.style.display = "inline-block";
@@ -92,6 +100,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  // 👇 Load Fake Store Products
+  //Load Fake Store Products
   loadProducts();
 });
