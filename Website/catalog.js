@@ -4,6 +4,47 @@ async function getJSON(url) {
   return res.json();
 }
 
+async function loadProducts() {
+  const grid = document.getElementById("productGrid");
+
+  try {
+    const products = await getJSON("https://fakestoreapi.com/products");
+
+    grid.innerHTML = "";
+
+    products.forEach(product => {
+      const card = document.createElement("div");
+      card.className = "card product-card";
+
+      card.innerHTML = `
+        <div class="card-header">
+          <h3>${product.title}</h3>
+        </div>
+        <div style="padding: 16px;">
+          <img src="${product.image}" 
+               alt="${product.title}" 
+               style="width:100%; height:200px; object-fit:contain; margin-bottom:12px;" />
+
+          <p class="muted small" style="min-height:60px;">
+            ${product.description.substring(0, 100)}...
+          </p>
+
+          <div style="margin-top:10px; display:flex; justify-content:space-between; align-items:center;">
+            <strong>$${product.price}</strong>
+            <button class="btn btn-primary">Redeem</button>
+          </div>
+        </div>
+      `;
+
+      grid.appendChild(card);
+    });
+
+  } catch (err) {
+    console.error("Failed to load products:", err);
+    grid.innerHTML = "<p>Failed to load catalog items.</p>";
+  }
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
   const meBadge = document.getElementById("meBadge");
   const pendingBtn = document.getElementById("pendingAppsBtn");
@@ -25,15 +66,17 @@ document.addEventListener("DOMContentLoaded", async () => {
         window.location.href = "/Website/sponsor-create.html";
       });
     }
+
   } catch (err) {
     console.error(err);
     meBadge.textContent = "Not logged in";
     window.location.href = "/Website/login.html";
   }
 
-  document.getElementById("profileBtn").addEventListener("click", async () => {
+  document.getElementById("profileBtn").addEventListener("click", () => {
     window.location.href = "/Website/profile.html";
   });
+
   document.getElementById("logoutBtn").addEventListener("click", async () => {
     try {
       await fetch("/api/auth/logout", {
@@ -41,7 +84,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         credentials: "same-origin"
       });
 
-      //After session is destroyed, redirect
       window.location.href = "/Website/login.html";
 
     } catch (err) {
@@ -50,4 +92,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
+  // 👇 Load Fake Store Products
+  loadProducts();
 });
