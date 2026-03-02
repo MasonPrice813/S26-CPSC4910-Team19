@@ -59,7 +59,20 @@
       gap: 8px;
       flex-wrap: wrap;
     }
+    select {
+      background: rgba(0,0,0,.35);
+      color: var(--text);
+      border: 1px solid rgba(255,255,255,.14);
+      border-radius: 12px;
+      padding: 10px 12px;
+    }
+    select option {
+      background: rgba(255,255,255,0.10);
+      color: white;
+    }
   </style>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
 
@@ -101,6 +114,36 @@
           <h3>Pending Applications</h3>
           <p class="muted">6</p>
         </div>
+      </div>
+    </section>
+
+    <!-- Points Analytics -->
+    <section class="content-box">
+      <h2>Points Analytics</h2>
+      <div class="row" style="margin-top:12px; gap:16px; flex-wrap:wrap;">
+        
+        <!-- Date Filter -->
+        <div>
+          <label class="muted small">Time View</label>
+          <select id="timeView" class="ghost-btn">
+            <option value="year">Year</option>
+            <option value="month">Month</option>
+            <option value="week">Week</option>
+          </select>
+        </div>
+
+        <!-- Driver Filter (Note: Names need to brought in from database) -->
+        <div>
+          <label class="muted small">Driver</label>
+          <select id="driverFilter" class="ghost-btn">
+            <option value="all">All Drivers (Average)</option>
+            <option value="1">John Smith</option> 
+            <option value="2">Maria Lopez</option>
+          </select>
+        </div>
+      </div>
+      <div style="margin-top:20px;">
+        <canvas id="pointsChart" height="100"></canvas>
       </div>
     </section>
 
@@ -195,6 +238,6 @@
     </footer>
 
   </main>
-
+  <script src="/Website/sponsorpage.js"></script>
 </body>
 </html>

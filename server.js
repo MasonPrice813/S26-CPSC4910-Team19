@@ -791,6 +791,69 @@ app.delete("/api/admin/users/:id", requireAdmin, async (req, res) => {
   }
 });
 
+// Getting data from the graph in week, month, year spans for each driver and average
+app.get("/api/points", async (req, res) => { 
+  const view = req.query.view;
+  const driver = req.query.driver;
+  let dateFormat;
+  let groupBy;
+  let dateFilter;
+
+  // Date SQL code
+  if (view === "year") {
+    dateFormat = "%b";
+    groupBy = "MONTH(created_at)";
+    dateFilter = "YEAR(created_at) = YEAR(CURDATE())";
+  } 
+  else if (view === "month") {
+    dateFormat = "%u";
+    groupBy = "WEEK(created_at)";
+    dateFilter = "MONTH(created_at) = MONTH(CURDATE())";
+  } 
+  else {
+    dateFormat = "%a";
+    groupBy = "DAY(created_at)";
+    dateFilter = "YEARWEEK(created_at, 1) = YEARWEEK(CURDATE(), 1)";
+  }
+
+  // Driver SQL code 
+  let sql;
+  let params = [];
+  if (driver === "all") {
+    sql = `
+      SELECT 
+        DATE_FORMAT(created_at, '${dateFormat}') AS label,
+        AVG(points_after) AS value
+      FROM driver_point_history
+      WHERE ${dateFilter}
+      GROUP BY ${groupBy}
+      ORDER BY MIN(created_at)
+    `;
+  } 
+  else {
+    sql = `
+      SELECT 
+        DATE_FORMAT(created_at, '${dateFormat}') AS label,
+        MAX(points_after) AS value
+      FROM driver_point_history
+      WHERE driver_id = ?
+        AND ${dateFilter}
+      GROUP BY ${groupBy}
+      ORDER BY MIN(created_at)
+    `;
+    params.push(driver);
+  }
+
+  try {
+    const [rows] = await pool.query(sql, params);
+    res.json(rows);
+  } 
+  catch (err) {
+    console.error("DB ERROR:", err);
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
 
 //Start server
 app.listen(PORT, "0.0.0.0", () => {
