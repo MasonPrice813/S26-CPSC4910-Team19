@@ -1,0 +1,31 @@
+# How to use in SQL query: CALL update_driver_points(2, 100, 'Avoided an Accident');
+CREATE DEFINER=`Team19`@`%` PROCEDURE `update_driver_points`(IN p_driver_id INT, IN p_change INT, IN p_reason VARCHAR(255))
+BEGIN
+DECLARE current_points INT;
+START TRANSACTION;
+
+SELECT points INTO current_points
+FROM drivers
+WHERE id = p_driver_id
+FOR UPDATE;
+
+UPDATE drivers
+SET points = points + p_change
+WHERE id = p_driver_id;
+
+INSERT INTO driver_point_history (
+	driver_id,
+	points_change,
+	points_before,
+	points_after,
+	reason
+)
+VALUES (
+	p_driver_id,
+	p_change,
+	current_points,
+	current_points + p_change,
+	p_reason
+);
+COMMIT;
+END
