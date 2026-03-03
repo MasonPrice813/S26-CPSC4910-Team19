@@ -1,0 +1,6 @@
+Placeholder for Uploads folder.
+
+This is the folder where users profile pictures will live in the EC2 server.
+
+Profile pictures will not be committed to GitHub and will only live on the 
+environment in which the user uploads the profile picture.
