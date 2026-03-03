@@ -5,6 +5,8 @@ const mysql = require("mysql2/promise");
 const bcrypt = require("bcrypt");
 const rateLimit = require("express-rate-limit");
 const crypto = require("crypto");
+const fs = require("fs");
+const multer = require("multer");
 const session = require("express-session");
 
 const app = express();
@@ -36,6 +38,31 @@ const pool = mysql.createPool({
 //Serve static files
 app.use("/Website", express.static(path.join(__dirname, "Website")));
 app.use("/Images", express.static(path.join(__dirname, "Images")));
+
+const uploadDir = path.join(__dirname, "Uploads");
+
+// Serve images from /Uploads
+app.use("/Uploads", express.static(uploadDir));
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, uploadDir),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname || "").toLowerCase();
+    cb(null, `user_${req.session.user.id}_${Date.now()}${ext}`);
+  }
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 2 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowed = ["image/jpeg", "image/png"];
+    if (!allowed.includes(file.mimetype)) {
+      return cb(new Error("Only JPG and PNG images allowed"));
+    }
+    cb(null, true);
+  }
+});
 
 //API route
 app.get("/api/about", async (req, res) => {
@@ -563,23 +590,31 @@ function requireLogin(req, res, next) {
   next();
 }
 
-//Full profile for the currently logged-in user
+// Full profile for the currently logged-in user (users + user_profiles)
 app.get("/api/me/profile", requireLogin, async (req, res) => {
   try {
     const userId = req.session.user.id;
 
-    const [rows] = await pool.query(
+    const [userRows] = await pool.query(
       `SELECT id, role, first_name, last_name, username, email, phone_number, sponsor
        FROM users
        WHERE id = ?
        LIMIT 1`,
       [userId]
     );
+    if (userRows.length === 0) return res.status(404).json({ error: "User not found" });
+    const u = userRows[0];
 
-    if (rows.length === 0) return res.status(404).json({ error: "User not found" });
+    const [profRows] = await pool.query(
+      `SELECT bio, prior_experience, address_text, profile_image_url, crop_x, crop_y
+       FROM user_profiles
+       WHERE user_id = ?
+       LIMIT 1`,
+      [userId]
+    );
+    const p = profRows[0] || null;
 
-    const u = rows[0];
-
+    //Refresh session fields
     req.session.user = {
       ...req.session.user,
       id: u.id,
@@ -588,7 +623,7 @@ app.get("/api/me/profile", requireLogin, async (req, res) => {
       sponsor: u.sponsor || null,
     };
 
-    res.json({ user: u });
+    res.json({ user: u, profile: p });
   } catch (err) {
     console.error("me/profile error:", err);
     res.status(500).json({ error: "Database error" });
@@ -623,6 +658,84 @@ app.post("/api/me/password", requireLogin, async (req, res) => {
   } catch (err) {
     console.error("me/password error:", err);
     res.status(500).json({ message: "Server error." });
+  }
+});
+
+//Save bio/prior experiebce/address/crop for logged-in user
+app.put("/api/me/profile", requireLogin, async (req, res) => {
+  const userId = req.session.user.id;
+
+  const bio = req.body?.bio ?? "";
+  const prior_experience = req.body?.prior_experience ?? "";
+  const address_text = req.body?.address_text ?? "";
+  const crop_x = req.body?.crop_x ?? null;
+  const crop_y = req.body?.crop_y ?? null;
+
+  try {
+    await pool.query(
+      `
+      INSERT INTO user_profiles (user_id, bio, prior_experience, address_text, crop_x, crop_y)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        bio = VALUES(bio),
+        prior_experience = VALUES(prior_experience),
+        address_text = VALUES(address_text),
+        crop_x = VALUES(crop_x),
+        crop_y = VALUES(crop_y)
+      `,
+      [userId, bio, prior_experience, address_text, crop_x, crop_y]
+    );
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("save profile error:", err);
+    res.status(500).json({ error: "Could not save profile" });
+  }
+});
+
+//Upload profile picture for logged-in user
+app.post("/api/me/profile/photo", requireLogin, upload.single("photo"), async (req, res) => {
+  try {
+    const userId = req.session.user.id;
+    const url = `/Uploads/${req.file.filename}`;
+
+    await pool.query(
+      `
+      INSERT INTO user_profiles (user_id, profile_image_url)
+      VALUES (?, ?)
+      ON DUPLICATE KEY UPDATE profile_image_url = VALUES(profile_image_url)
+      `,
+      [userId, url]
+    );
+
+    res.json({ ok: true, url });
+  } catch (err) {
+    console.error("photo upload error:", err);
+    res.status(500).json({ error: "Could not upload photo" });
+  }
+});
+
+//Remove profile picture (keeps other profile fields)
+app.delete("/api/me/profile/photo", requireLogin, async (req, res) => {
+  try {
+    const userId = req.session.user.id;
+
+    await pool.query(
+      `
+      INSERT INTO user_profiles (user_id, profile_image_url, crop_x, crop_y)
+      VALUES (?, NULL, NULL, NULL)
+      ON DUPLICATE KEY UPDATE
+        profile_image_url = NULL,
+        crop_x = NULL,
+        crop_y = NULL
+      `,
+      [userId]
+    );
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("photo delete error:", err);
+    res.status(500).json({ error: "Could not remove photo" });
   }
 });
 

@@ -57,28 +57,81 @@ function setSectionContent(id, value) {
   s.content = (value ?? "").toString();
 }
 
-async function loadProfileFromSession() {
+window.__profilePicError = async function(imgEl) {
+  //prevent loops
+  imgEl.onerror = null;
+
+  //Show default avatar
+  imgEl.src = "/Images/default_avatar.jpg";
+
+  const hadCustom = imgEl.getAttribute("data-has-custom") === "1";
+  if (!hadCustom) return;
+
   try {
-    const data = await getJSON("/api/me/profile");
-    const u = data.user;
+    await fetch("/api/me/profile/photo", { method: "DELETE" });
+  } catch (e) {
+    console.error("Could not clear missing profile image:", e);
+  }
+};
 
-    const meBadge = document.getElementById("meBadge");
-    if (meBadge) {
-      meBadge.textContent = `${u.first_name} ${u.last_name} • ${u.role}`;
-    }
+async function loadProfileFromSession() {
+    try {
+        const data = await getJSON("/api/me/profile");
+        const u = data.user;
+        const p = data.profile || {};
 
-    const profileName = document.getElementById("profileName");
-    if (profileName) profileName.textContent = `${u.first_name} ${u.last_name}`;
+        const meBadge = document.getElementById("meBadge");
+        if (meBadge) meBadge.textContent = `${u.first_name} ${u.last_name} • ${u.role}`;
 
-    setSectionContent("userphone", u.phone_number || "");
-    setSectionContent("useremail", u.email || "");
-    setSectionContent("sponsor", u.sponsor || "None");
+        const profileName = document.getElementById("profileName");
+        if (profileName) profileName.textContent = `${u.first_name} ${u.last_name}`;
 
-    renderingSections();
+        setSectionContent("userphone", u.phone_number || "");
+        setSectionContent("useremail", u.email || "");
+        setSectionContent("sponsor", u.sponsor || "None");
+
+        setSectionContent("userbio", p.bio || "");
+        setSectionContent("userPriorExperience", p.prior_experience || "");
+        setSectionContent("useraddress", p.address_text || "");
+
+        const pic = sections.find(s => s.id === "profilePicture");
+        if (pic) {
+            pic.content = p.profile_image_url || "";
+            pic.cropX = p.crop_x || "50%";
+            pic.cropY = p.crop_y || "50%";
+        }
+
+        renderingSections();
   } catch (err) {
     console.error(err);
     window.location.href = "/Website/login.html";
   }
+}
+
+async function sendJSON(url, method, body) {
+  const res = await fetch(url, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || data?.message || `${url} -> ${res.status}`);
+  return data;
+}
+
+async function saveProfileToDB() {
+  const bio = sections.find(s => s.id === "userbio")?.content || "";
+  const prior = sections.find(s => s.id === "userPriorExperience")?.content || "";
+  const address = sections.find(s => s.id === "useraddress")?.content || "";
+  const pic = sections.find(s => s.id === "profilePicture");
+
+  await sendJSON("/api/me/profile", "PUT", {
+    bio,
+    prior_experience: prior,
+    address_text: address,
+    crop_x: pic?.cropX || null,
+    crop_y: pic?.cropY || null
+  });
 }
 
 function renderingSections() {
@@ -102,28 +155,23 @@ function renderingSections() {
         }
         else if (section.id === "profilePicture") {
 
-            if (section.content === "") {
-                profileButtons = `
-                <button class="btn btn-primary add-btn">Add</button>
-                `;
-                profileContent = `
-                    <p style="margin-top:12px; color: var(--muted-2);">
-                        No profile picture
-                    </p>
-                `;
-            } else {
-                profileButtons = `
+            profileButtons = `
+                ${section.content ? `
                     <button class="btn btn-outline edit-btn">Change</button>
                     <button class="btn btn-secondary remove-btn">Remove</button>
                     <button class="btn btn-primary crop-btn">Edit Crop</button>
+                ` : `
+                    <button class="btn btn-primary add-btn">Add</button>
+                `}
+            `;
 
-                `;
-                profileContent = `
-                    <img id="profile-img" src="${section.content}" 
-                        style="margin-top:12px; width:150px; height:150px; object-fit:cover; object-position:${section.cropX || "50%"} ${section.cropY || "50%"}; border-radius:50%;" />
-                `;
-            }
-
+            profileContent = `
+                <img class="profile-pic"
+                    src="${section.content || "/Images/default_avatar.jpg"}"
+                    alt="Profile Picture"
+                    data-has-custom="${section.content ? "1" : "0"}"
+                    onerror="window.__profilePicError && window.__profilePicError(this)" />
+            `;
         }
         else if (section.id === "userpassword") {
             profileButtons = `
@@ -213,18 +261,33 @@ function addOrEditSection(id) {
     if (id === "profilePicture") {
         const input = document.createElement("input");
         input.type = "file";
-        input.accept = "image/*";
+        input.accept = "image/png,image/jpeg";
 
-        input.onchange = function () {
+        input.onchange = async function () {
             const file = input.files[0];
             if (!file) return;
 
-            const reader = new FileReader();
-            reader.onload = function (e) {
-                section.content = e.target.result;
+            try {
+                const fd = new FormData();
+                fd.append("photo", file);
+
+                const res = await fetch("/api/me/profile/photo", {
+                    method: "POST",
+                    body: fd
+                });
+
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(data?.error || "Upload failed");
+
+                section.content = data.url;
+                section.cropX = "50%";
+                section.cropY = "50%";
                 renderingSections();
-            };
-            reader.readAsDataURL(file);
+
+                await saveProfileToDB();
+            } catch (err) {
+                alert(err.message || "Could not upload photo.");
+            }
         };
 
         input.click();
@@ -238,16 +301,34 @@ function addOrEditSection(id) {
     if (newContent !== null) {
         section.content = newContent.trim();
         renderingSections();
+        saveProfileToDB().catch(err => console.error(err));
     }
 }
 
-function removeSection(id) {
+async function removeSection(id) {
     const section = sections.find(s => s.id === id);
-    if (!section) {
+    if (!section) return;
+
+    // If removing photo, clear DB photo too
+    if (id === "profilePicture") {
+        try {
+            await fetch("/api/me/profile/photo", { method: "DELETE" });
+        } catch (e) {
+            console.error(e);
+        }
+
+        section.content = "";
+        section.cropX = null;
+        section.cropY = null;
+
+        renderingSections();
+        saveProfileToDB().catch(err => console.error(err));
         return;
     }
-    section.content = ""; 
+
+    section.content = "";
     renderingSections();
+    saveProfileToDB().catch(err => console.error(err));
 }
 
 
@@ -361,6 +442,7 @@ document.addEventListener("click", function (e) {
             if (container) {
                 container.style.cursor = "default";
             }
+            saveProfileToDB().catch(err => console.error(err));
         }
     }
 });
@@ -373,4 +455,28 @@ document.addEventListener("click", function (e) {
 
 document.getElementById("catalogBtn").addEventListener("click", async () => {
     window.location.href = "/Website/catalog.html";
+});
+
+document.addEventListener("DOMContentLoaded", () => {
+    loadProfileFromSession();
+
+    const saveBtn = document.getElementById("saveProfileBtn");
+    const status = document.getElementById("saveStatus");
+
+    if (saveBtn) {
+        saveBtn.addEventListener("click", async () => {
+        try {
+            saveBtn.disabled = true;
+            if (status) status.textContent = "Saving...";
+            await saveProfileToDB();
+            if (status) status.textContent = "Saved!";
+            setTimeout(() => { if (status) status.textContent = ""; }, 1500);
+        } catch (err) {
+            console.error(err);
+            if (status) status.textContent = err.message || "Save failed.";
+        } finally {
+            saveBtn.disabled = false;
+        }
+        });
+    }
 });
