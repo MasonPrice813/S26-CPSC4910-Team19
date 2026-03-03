@@ -5,48 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Sponsor Dashboard — Driver Incentive Program</title>
   <link rel="stylesheet" href="/Website/about-style.css" />
+
   <style>
-    .driver-table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 14px;
-    }
-
-    .driver-table th,
-    .driver-table td {
-      padding: 12px 10px;
-      text-align: left;
-      border-bottom: 1px solid rgba(255,255,255,0.10);
-    }
-
-    .driver-table th {
-      font-weight: 700;
-      color: var(--muted);
-      font-size: 14px;
-      letter-spacing: .4px;
-    }
-
-    .driver-actions {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-
-    .table-actions-global {
-      margin-top: 18px;
-      padding-top: 16px;
-      border-top: 1px solid rgba(255,255,255,0.10);
-      display: flex;
-      gap: 12px;
-      flex-wrap: wrap;
-    }
-
+    .driver-table,
     .application-table {
       width: 100%;
       border-collapse: collapse;
       margin-top: 14px;
     }
 
+    .driver-table th,
+    .driver-table td,
     .application-table th,
     .application-table td {
       padding: 12px 10px;
@@ -54,32 +23,36 @@
       border-bottom: 1px solid rgba(255,255,255,0.10);
     }
 
+    .driver-actions,
     .application-actions {
       display: flex;
       gap: 8px;
       flex-wrap: wrap;
     }
-    select {
+
+    select, textarea {
       background: rgba(0,0,0,.35);
       color: var(--text);
       border: 1px solid rgba(255,255,255,.14);
       border-radius: 12px;
       padding: 10px 12px;
+      width: 100%;
     }
-    select option {
-      background: rgba(255,255,255,0.10);
-      color: white;
+
+    textarea {
+      min-height: 120px;
+      resize: vertical;
     }
   </style>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
+
 <body>
 
   <!-- Navigation -->
   <nav class="navbar">
     <div class="nav-brand">Driver Incentive Program</div>
-
     <div class="nav-actions">
       <a href="#" class="btn btn-secondary">Dashboard</a>
       <a href="#" class="btn btn-secondary">About</a>
@@ -89,7 +62,7 @@
 
   <main class="container">
 
-    <!-- Sponsor Header -->
+    <!-- Header -->
     <section class="header">
       <h1 style="font-size: 42px;">Example Sponsor</h1>
       <p class="subtitle">Sponsor Dashboard</p>
@@ -98,18 +71,15 @@
     <!-- Quick Stats -->
     <section class="content-box">
       <h2>Quick Stats</h2>
-
       <div class="row">
         <div>
           <h3>Active Drivers</h3>
           <p class="muted">128</p>
         </div>
-
         <div>
           <h3>Total Points Awarded</h3>
           <p class="muted">54,320</p>
         </div>
-
         <div>
           <h3>Pending Applications</h3>
           <p class="muted">6</p>
@@ -120,28 +90,27 @@
     <!-- Points Analytics -->
     <section class="content-box">
       <h2>Points Analytics</h2>
+
       <div class="row" style="margin-top:12px; gap:16px; flex-wrap:wrap;">
-        
-        <!-- Date Filter -->
         <div>
           <label class="muted small">Time View</label>
-          <select id="timeView" class="ghost-btn">
+          <select id="timeView">
             <option value="year">Year</option>
             <option value="month">Month</option>
             <option value="week">Week</option>
           </select>
         </div>
 
-        <!-- Driver Filter (Note: Names need to brought in from database) -->
         <div>
           <label class="muted small">Driver</label>
-          <select id="driverFilter" class="ghost-btn">
+          <select id="driverFilter">
             <option value="all">All Drivers (Average)</option>
-            <option value="1">John Smith</option> 
+            <option value="1">John Smith</option>
             <option value="2">Maria Lopez</option>
           </select>
         </div>
       </div>
+
       <div style="margin-top:20px;">
         <canvas id="pointsChart" height="100"></canvas>
       </div>
@@ -161,7 +130,6 @@
           </tr>
         </thead>
         <tbody>
-
           <tr>
             <td>John Smith</td>
             <td>john@example.com</td>
@@ -174,7 +142,6 @@
               </div>
             </td>
           </tr>
-
           <tr>
             <td>Maria Lopez</td>
             <td>maria@example.com</td>
@@ -187,19 +154,16 @@
               </div>
             </td>
           </tr>
-
         </tbody>
       </table>
 
-      <!-- Global Controls -->
-      <div class="table-actions-global">
+      <div style="margin-top:18px;">
         <button class="btn btn-primary">Award Points to All Drivers</button>
         <button class="btn btn-secondary">Deduct Points from All Drivers</button>
       </div>
-
     </section>
 
-    <!-- Applications Section -->
+    <!-- Applications -->
     <section class="content-box">
       <h2>Driver Applications</h2>
 
@@ -213,7 +177,6 @@
           </tr>
         </thead>
         <tbody>
-
           <tr>
             <td>David Miller</td>
             <td>david@example.com</td>
@@ -226,18 +189,48 @@
               </div>
             </td>
           </tr>
-
         </tbody>
       </table>
-
     </section>
 
-    <!-- Footer -->
+     <!-- POINTS CRITERIA SECTION -->
+    <section class="content-box">
+      <h2>Points Criteria</h2>
+
+      <div style="margin-top:12px;">
+        <label class="muted small">Sponsor Point Rules / Criteria</label>
+        <textarea id="pointsCriteria" style="width:100%; min-height:120px;">
+Example:
++10 points for safe week
++25 monthly bonus
+-15 late delivery
+        </textarea>
+      </div>
+
+      <div style="margin-top:16px;">
+        <label class="muted small">
+          Allow Drivers' Points to Go Negative?
+        </label>
+
+        <select id="allowNegative" style="width:100%; margin-top:8px;">
+          <option value="yes">Yes</option>
+          <option value="no" selected>No</option>
+        </select>
+      </div>
+
+      <div style="margin-top:16px;">
+        <button class="btn btn-primary" id="saveSettingsBtn">
+          Save Settings
+        </button>
+      </div>
+    </section>
+
     <footer class="footer">
       <p>&copy; 2026 — Driver Incentive Program</p>
     </footer>
 
   </main>
+
   <script src="/Website/sponsorpage.js"></script>
 </body>
 </html>
