@@ -1,55 +1,133 @@
-const ctx = document.getElementById("pointsChart").getContext("2d");
+const ctx = document.getElementById("pointsChart")?.getContext("2d");
 let pointsChart;
+
 const timeViewSelect = document.getElementById("timeView");
 const driverFilterSelect = document.getElementById("driverFilter");
 
-// Getting the data from mySQL
+const criteriaTextarea = document.getElementById("pointsCriteria");
+const allowNegativeSelect = document.getElementById("allowNegative");
+const saveCriteriaBtn = document.getElementById("saveCriteriaBtn");
+
+/* ============================
+   FETCH POINTS DATA
+============================ */
+
 async function fetchPointsData(view, driverId) {
   try {
     const response = await fetch(`/api/points?view=${view}&driver=${driverId}`);
-    if (!response.ok) {
-      console.error("Server error:", response.status);
-      return [];
-    }
-    const data = await response.json();
-    if (!Array.isArray(data)) {
-      console.error("Unexpected response:", data);
-      return [];
-    }
-    return data;
-  } 
-  catch (err) {
-    console.error("Fetch error:", err);
+    if (!response.ok) return [];
+    return await response.json();
+  } catch (err) {
+    console.error(err);
     return [];
   }
 }
 
 async function renderChart() {
-    const view = timeViewSelect.value;
-    const driverId = driverFilterSelect.value;
-    const data = await fetchPointsData(view, driverId);
-    const labels = data.map(d => d.label);
-    const values = data.map(d => d.value);
-    
-    if (pointsChart) {
-        pointsChart.destroy();
+  if (!ctx) return;
+
+  const view = timeViewSelect.value;
+  const driverId = driverFilterSelect.value;
+
+  const data = await fetchPointsData(view, driverId);
+  const labels = data.map(d => d.label);
+  const values = data.map(d => d.value);
+
+  if (pointsChart) pointsChart.destroy();
+
+  pointsChart = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [{
+        label: driverId === "all"
+          ? "Average Points (All Drivers)"
+          : "Driver Points",
+        data: values,
+        borderWidth: 3,
+        tension: 0.3
+      }]
     }
-    
-    pointsChart = new Chart(ctx, {
-        type: "line",
-        data: {
-            labels,
-            datasets: [{
-                label: driverId === "all" ? "Average Points (All Drivers)" : "Driver Points",
-                data: values,
-                borderWidth: 3,
-                tension: 0.3
-            }]
-        }
-    });
+  });
 }
 
-// When user changes the dropdowns
-timeViewSelect.addEventListener("change", renderChart);
-driverFilterSelect.addEventListener("change", renderChart);
+timeViewSelect?.addEventListener("change", renderChart);
+driverFilterSelect?.addEventListener("change", renderChart);
 renderChart();
+
+/* ============================
+   LOAD EXISTING SETTINGS
+============================ */
+
+async function loadSponsorSettings() {
+  try {
+    const response = await fetch("/api/sponsor/settings");
+    if (!response.ok) return;
+
+    const data = await response.json();
+
+    criteriaTextarea.value = data.pointsCriteria || "";
+    allowNegativeSelect.value = data.allowNegative ? "true" : "false";
+  } catch (err) {
+    console.error("Error loading settings:", err);
+  }
+}
+
+loadSponsorSettings();
+
+/* ============================
+   SAVE SETTINGS TO DATABASE
+============================ */
+
+saveCriteriaBtn.addEventListener("click", async () => {
+  const criteria = criteriaTextarea.value;
+  const allowNegative = allowNegativeSelect.value === "true";
+
+  try {
+    const response = await fetch("/api/sponsor/settings", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        pointsCriteria: criteria,
+        allowNegative: allowNegative
+      })
+    });
+
+    if (response.ok) {
+      alert("Settings saved successfully.");
+    } else {
+      alert("Failed to save settings.");
+    }
+  } catch (err) {
+    console.error("Save error:", err);
+  }
+});
+
+/* ============================
+   MODIFY POINTS FUNCTION
+   (Ensures DB knows if negative allowed)
+============================ */
+
+async function updateDriverPoints(driverId, amount) {
+
+  const allowNegative = allowNegativeSelect.value === "true";
+
+  try {
+    await fetch("/api/points/update", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        driverId: driverId,
+        amount: amount,
+        allowNegative: allowNegative
+      })
+    });
+
+  } catch (err) {
+    console.error("Point update error:", err);
+  }
+}
