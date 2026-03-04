@@ -11,6 +11,27 @@ let totalPages = 1;
 let allProducts = [];
 let filteredProducts = [];
 
+const POINTS_PER_DOLLAR = 10; // 10 points = $1
+
+function dollarsToPoints(priceDollars) {
+  const p = Number(priceDollars);
+  if (!Number.isFinite(p)) return 0;
+  return Math.ceil(p * POINTS_PER_DOLLAR);
+}
+
+function formatDollars(priceDollars) {
+  const p = Number(priceDollars);
+  if (!Number.isFinite(p)) return "$0.00";
+  return `$${p.toFixed(2)}`;
+}
+
+function getUserPoints() {
+  const el = document.getElementById("pointsBalance");
+  if (!el) return 0;
+  const m = String(el.textContent || "").match(/(\d+)/);
+  return m ? Number(m[1]) : 0;
+}
+
 function normalizeNumber(val) {
   if (val === "" || val === null || val === undefined) return null;
   const n = Number(val);
@@ -20,23 +41,30 @@ function normalizeNumber(val) {
 function getFilters() {
   const q = (document.getElementById("searchInput")?.value || "").trim().toLowerCase();
   const category = document.getElementById("categorySelect")?.value || "all";
-  const minPrice = normalizeNumber(document.getElementById("minPrice")?.value);
-  const maxPrice = normalizeNumber(document.getElementById("maxPrice")?.value);
-  return { q, category, minPrice, maxPrice };
+  const minPoints = normalizeNumber(document.getElementById("minPoints")?.value);
+  const maxPoints = normalizeNumber(document.getElementById("maxPoints")?.value);
+  const affordableOnly = !!document.getElementById("affordableOnly")?.checked;
+
+  return { q, category, minPoints, maxPoints, affordableOnly };
 }
 
 function applyFilters() {
-  const { q, category, minPrice, maxPrice } = getFilters();
+  const { q, category, minPoints, maxPoints, affordableOnly } = getFilters();
+  const userPoints = getUserPoints();
 
   filteredProducts = allProducts.filter((p) => {
     const title = String(p.title || "").toLowerCase();
     const cat = String(p.category || "");
-    const price = Number(p.price);
+    const dollars = Number(p.price);
+    const pointsCost = dollarsToPoints(dollars);
 
     if (q && !title.includes(q)) return false;
     if (category !== "all" && cat !== category) return false;
-    if (minPrice !== null && price < minPrice) return false;
-    if (maxPrice !== null && price > maxPrice) return false;
+
+    if (minPoints !== null && pointsCost < minPoints) return false;
+    if (maxPoints !== null && pointsCost > maxPoints) return false;
+
+    if (affordableOnly && pointsCost > userPoints) return false;
 
     return true;
   });
@@ -70,6 +98,9 @@ function renderProducts() {
       const card = document.createElement("div");
       card.className = "card product-card";
 
+      const pointsCost = dollarsToPoints(product.price);
+      const dollarsLabel = formatDollars(product.price);
+
       card.innerHTML = `
         <div class="card-header">
           <h3>${product.title}</h3>
@@ -78,15 +109,18 @@ function renderProducts() {
         <div style="padding:16px;">
 
           <img src="${product.thumbnail}"
-               alt="${product.title}"
-               style="width:100%; height:200px; object-fit:contain; margin-bottom:12px;" />
+              alt="${product.title}"
+              style="width:100%; height:200px; object-fit:contain; margin-bottom:12px;" />
 
           <p class="muted small" style="min-height:60px;">
             ${String(product.description || "").substring(0, 100)}...
           </p>
 
-          <div style="margin-top:10px; display:flex; justify-content:space-between; align-items:center;">
-            <strong>$${product.price}</strong>
+          <div style="margin-top:10px; display:flex; justify-content:space-between; align-items:flex-start;">
+            <div>
+              <strong>${pointsCost} points</strong>
+              <div class="muted small" style="margin-top:2px;">(${dollarsLabel})</div>
+            </div>
             <button class="btn btn-primary" type="button">Redeem</button>
           </div>
 
@@ -114,8 +148,9 @@ function renderProducts() {
 function wireUpFilterUI() {
   const searchInput = document.getElementById("searchInput");
   const categorySelect = document.getElementById("categorySelect");
-  const minPrice = document.getElementById("minPrice");
-  const maxPrice = document.getElementById("maxPrice");
+  const minPoints = document.getElementById("minPoints");
+  const maxPoints = document.getElementById("maxPoints");
+  const affordableOnly = document.getElementById("affordableOnly");
   const clearBtn = document.getElementById("clearFiltersBtn");
 
   let t = null;
@@ -134,22 +169,22 @@ function wireUpFilterUI() {
     applyFilters();
   });
 
-  const onPriceChange = () => {
+  if (minPoints) minPoints.addEventListener("input", debouncedApply);
+  if (maxPoints) maxPoints.addEventListener("input", debouncedApply);
+
+  if (affordableOnly) affordableOnly.addEventListener("change", () => {
     currentPage = 1;
     applyFilters();
-  };
-
-  if (minPrice) minPrice.addEventListener("input", debouncedApply);
-  if (maxPrice) maxPrice.addEventListener("input", debouncedApply);
-  if (minPrice) minPrice.addEventListener("change", onPriceChange);
-  if (maxPrice) maxPrice.addEventListener("change", onPriceChange);
+  });
 
   if (clearBtn) {
     clearBtn.addEventListener("click", () => {
       if (searchInput) searchInput.value = "";
       if (categorySelect) categorySelect.value = "all";
-      if (minPrice) minPrice.value = "";
-      if (maxPrice) maxPrice.value = "";
+      if (minPoints) minPoints.value = "";
+      if (maxPoints) maxPoints.value = "";
+      if (affordableOnly) affordableOnly.checked = false;
+
       currentPage = 1;
       applyFilters();
     });
@@ -157,17 +192,14 @@ function wireUpFilterUI() {
 }
 
 async function initCatalogData() {
-  // 1) Fetch categories
+  //Fetch categories
   const cats = await getJSON("https://dummyjson.com/products/categories");
 
   const categorySelect = document.getElementById("categorySelect");
   if (categorySelect && Array.isArray(cats)) {
-    // Clear any existing options except "all"
     categorySelect.innerHTML = `<option value="all">All categories</option>`;
 
     cats.forEach((c) => {
-      // DummyJSON categories can be strings or objects depending on version;
-      // this handles both.
       const slug = typeof c === "string" ? c : (c?.slug || c?.name || "");
       const name = typeof c === "string" ? c : (c?.name || c?.slug || "");
       if (!slug) return;
@@ -179,7 +211,7 @@ async function initCatalogData() {
     });
   }
 
-  // 2) Fetch all products (DummyJSON default total is 100)
+  //Fetch all products
   const data = await getJSON("https://dummyjson.com/products?limit=0");
   allProducts = Array.isArray(data?.products) ? data.products : [];
   filteredProducts = [...allProducts];

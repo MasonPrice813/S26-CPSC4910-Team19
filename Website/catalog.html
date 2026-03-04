@@ -41,7 +41,7 @@
 
         <h2>
             Rewards Catalog
-            <span style="float:right;">Points: 2000</span>
+            <span id="pointsBalance" style="float:right;">Points: 2000</span>
         </h2>
 
         <p class="info-row">
@@ -60,29 +60,38 @@
         <div style="flex: 0 1 220px; min-width: 200px;">
             <label class="muted small" for="categorySelect">Category</label>
             <select id="categorySelect"
-                    style="width:100%; padding:10px; border-radius:10px; border:1px solid rgba(0,0,0,0.12);">
+                style="width:100%; padding:10px; border-radius:10px; border:1px solid rgba(0,0,0,0.12);">
             <option value="all">All categories</option>
             </select>
         </div>
 
-        <div style="flex: 0 1 140px; min-width: 120px;">
-            <label class="muted small" for="minPrice">Min $</label>
-            <input id="minPrice"
+        <!-- Replace the Min $ / Max $ inputs with these -->
+
+        <div style="flex: 0 1 160px; min-width: 140px;">
+        <label class="muted small" for="minPoints">Min points</label>
+        <input id="minPoints"
                 type="number"
                 min="0"
-                step="1"
+                step="10"
                 placeholder="0"
                 style="width:100%; padding:10px; border-radius:10px; border:1px solid rgba(0,0,0,0.12);" />
         </div>
 
-        <div style="flex: 0 1 140px; min-width: 120px;">
-            <label class="muted small" for="maxPrice">Max $</label>
-            <input id="maxPrice"
+        <div style="flex: 0 1 160px; min-width: 140px;">
+        <label class="muted small" for="maxPoints">Max points</label>
+        <input id="maxPoints"
                 type="number"
                 min="0"
-                step="1"
-                placeholder="999"
+                step="10"
+                placeholder="10000"
                 style="width:100%; padding:10px; border-radius:10px; border:1px solid rgba(0,0,0,0.12);" />
+        </div>
+
+        <div style="display:flex; align-items:center; gap:10px; padding:0 6px;">
+            <label class="muted small" style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+            <input id="affordableOnly" type="checkbox" />
+                Affordable only
+            </label>
         </div>
 
         <div style="display:flex; gap:10px;">
