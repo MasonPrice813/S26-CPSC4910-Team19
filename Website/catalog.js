@@ -8,26 +8,66 @@ let currentPage = 1;
 const limit = 18;
 let totalPages = 1;
 
-async function loadProducts() {
+let allProducts = [];
+let filteredProducts = [];
 
+function normalizeNumber(val) {
+  if (val === "" || val === null || val === undefined) return null;
+  const n = Number(val);
+  return Number.isFinite(n) ? n : null;
+}
+
+function getFilters() {
+  const q = (document.getElementById("searchInput")?.value || "").trim().toLowerCase();
+  const category = document.getElementById("categorySelect")?.value || "all";
+  const minPrice = normalizeNumber(document.getElementById("minPrice")?.value);
+  const maxPrice = normalizeNumber(document.getElementById("maxPrice")?.value);
+  return { q, category, minPrice, maxPrice };
+}
+
+function applyFilters() {
+  const { q, category, minPrice, maxPrice } = getFilters();
+
+  filteredProducts = allProducts.filter((p) => {
+    const title = String(p.title || "").toLowerCase();
+    const cat = String(p.category || "");
+    const price = Number(p.price);
+
+    if (q && !title.includes(q)) return false;
+    if (category !== "all" && cat !== category) return false;
+    if (minPrice !== null && price < minPrice) return false;
+    if (maxPrice !== null && price > maxPrice) return false;
+
+    return true;
+  });
+
+  totalPages = Math.max(1, Math.ceil(filteredProducts.length / limit));
+  if (currentPage > totalPages) currentPage = totalPages;
+  if (currentPage < 1) currentPage = 1;
+
+  renderProducts();
+}
+
+function renderProducts() {
   const grid = document.getElementById("productGrid");
+  const meta = document.getElementById("resultsMeta");
 
-  const skip = (currentPage - 1) * limit;
+  if (!grid) return;
 
-  try {
+  const start = (currentPage - 1) * limit;
+  const pageItems = filteredProducts.slice(start, start + limit);
 
-    const data = await getJSON(`https://dummyjson.com/products?limit=${limit}&skip=${skip}`);
+  grid.innerHTML = "";
 
-    const products = data.products;
+  if (meta) {
+    meta.textContent = `Showing ${filteredProducts.length} result(s).`;
+  }
 
-    totalPages = Math.ceil(data.total / limit);
-
-    grid.innerHTML = "";
-
-    products.forEach(product => {
-
+  if (pageItems.length === 0) {
+    grid.innerHTML = `<p class="muted">No products match your filters.</p>`;
+  } else {
+    pageItems.forEach((product) => {
       const card = document.createElement("div");
-
       card.className = "card product-card";
 
       card.innerHTML = `
@@ -42,90 +82,149 @@ async function loadProducts() {
                style="width:100%; height:200px; object-fit:contain; margin-bottom:12px;" />
 
           <p class="muted small" style="min-height:60px;">
-            ${product.description.substring(0,100)}...
+            ${String(product.description || "").substring(0, 100)}...
           </p>
 
           <div style="margin-top:10px; display:flex; justify-content:space-between; align-items:center;">
             <strong>$${product.price}</strong>
-            <button class="btn btn-primary">Redeem</button>
+            <button class="btn btn-primary" type="button">Redeem</button>
           </div>
 
         </div>
       `;
 
       card.style.cursor = "pointer";
-
       card.addEventListener("click", () => {
         window.location.href = `/Website/product.html?id=${product.id}`;
       });
 
       grid.appendChild(card);
-
     });
+  }
 
-    document.getElementById("pageNumber").innerText = `Page ${currentPage} of ${totalPages}`;
+  const pageNumber = document.getElementById("pageNumber");
+  if (pageNumber) pageNumber.innerText = `Page ${currentPage} of ${totalPages}`;
 
-    document.getElementById("prevPage").disabled = currentPage === 1;
-    document.getElementById("nextPage").disabled = currentPage === totalPages;
+  const prevBtn = document.getElementById("prevPage");
+  const nextBtn = document.getElementById("nextPage");
+  if (prevBtn) prevBtn.disabled = currentPage === 1;
+  if (nextBtn) nextBtn.disabled = currentPage === totalPages;
+}
 
-  } catch (err) {
+function wireUpFilterUI() {
+  const searchInput = document.getElementById("searchInput");
+  const categorySelect = document.getElementById("categorySelect");
+  const minPrice = document.getElementById("minPrice");
+  const maxPrice = document.getElementById("maxPrice");
+  const clearBtn = document.getElementById("clearFiltersBtn");
 
-    console.error("Failed to load products:", err);
+  let t = null;
+  const debouncedApply = () => {
+    if (t) clearTimeout(t);
+    t = setTimeout(() => {
+      currentPage = 1;
+      applyFilters();
+    }, 200);
+  };
 
-    grid.innerHTML = "<p>Failed to load catalog items.</p>";
+  if (searchInput) searchInput.addEventListener("input", debouncedApply);
 
+  if (categorySelect) categorySelect.addEventListener("change", () => {
+    currentPage = 1;
+    applyFilters();
+  });
+
+  const onPriceChange = () => {
+    currentPage = 1;
+    applyFilters();
+  };
+
+  if (minPrice) minPrice.addEventListener("input", debouncedApply);
+  if (maxPrice) maxPrice.addEventListener("input", debouncedApply);
+  if (minPrice) minPrice.addEventListener("change", onPriceChange);
+  if (maxPrice) maxPrice.addEventListener("change", onPriceChange);
+
+  if (clearBtn) {
+    clearBtn.addEventListener("click", () => {
+      if (searchInput) searchInput.value = "";
+      if (categorySelect) categorySelect.value = "all";
+      if (minPrice) minPrice.value = "";
+      if (maxPrice) maxPrice.value = "";
+      currentPage = 1;
+      applyFilters();
+    });
   }
 }
 
-document.addEventListener("DOMContentLoaded", async () => {
+async function initCatalogData() {
+  // 1) Fetch categories
+  const cats = await getJSON("https://dummyjson.com/products/categories");
 
+  const categorySelect = document.getElementById("categorySelect");
+  if (categorySelect && Array.isArray(cats)) {
+    // Clear any existing options except "all"
+    categorySelect.innerHTML = `<option value="all">All categories</option>`;
+
+    cats.forEach((c) => {
+      // DummyJSON categories can be strings or objects depending on version;
+      // this handles both.
+      const slug = typeof c === "string" ? c : (c?.slug || c?.name || "");
+      const name = typeof c === "string" ? c : (c?.name || c?.slug || "");
+      if (!slug) return;
+
+      const opt = document.createElement("option");
+      opt.value = slug;
+      opt.textContent = name;
+      categorySelect.appendChild(opt);
+    });
+  }
+
+  // 2) Fetch all products (DummyJSON default total is 100)
+  const data = await getJSON("https://dummyjson.com/products?limit=0");
+  allProducts = Array.isArray(data?.products) ? data.products : [];
+  filteredProducts = [...allProducts];
+
+  totalPages = Math.max(1, Math.ceil(filteredProducts.length / limit));
+  currentPage = 1;
+
+  applyFilters();
+}
+
+document.addEventListener("DOMContentLoaded", async () => {
   const meBadge = document.getElementById("meBadge");
   const manageUsersBtn = document.getElementById("manageUsersBtn");
   const pendingBtn = document.getElementById("pendingAppsBtn");
   const createSponsorBtn = document.getElementById("createSponsorBtn");
 
   try {
-
     const me = await getJSON("/api/me");
 
     const sponsorText = me.sponsor ? ` • ${me.sponsor}` : "";
-
     meBadge.textContent = `Logged in as: ${me.role}${sponsorText}`;
 
     if (me.role === "Admin") {
-
       manageUsersBtn.style.display = "inline-block";
-
       manageUsersBtn.addEventListener("click", () => {
         window.location.href = "/Website/admin-users.html";
       });
-
     }
 
     if (me.role === "Sponsor") {
-
       pendingBtn.style.display = "inline-block";
-
       pendingBtn.addEventListener("click", () => {
         window.location.href = "/Website/sponsor-applications.html";
       });
 
       createSponsorBtn.style.display = "inline-block";
-
       createSponsorBtn.addEventListener("click", () => {
         window.location.href = "/Website/sponsor-create.html";
       });
-
     }
-
   } catch (err) {
-
     console.error(err);
-
     meBadge.textContent = "Not logged in";
-
     window.location.href = "/Website/login.html";
-
+    return;
   }
 
   document.getElementById("profileBtn").addEventListener("click", () => {
@@ -133,44 +232,39 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   document.getElementById("logoutBtn").addEventListener("click", async () => {
-
     try {
-
       await fetch("/api/auth/logout", {
         method: "POST",
         credentials: "same-origin"
       });
-
       window.location.href = "/Website/login.html";
-
     } catch (err) {
-
       console.error("Logout failed:", err);
-
       window.location.href = "/Website/login.html";
-
     }
-
   });
 
   document.getElementById("nextPage").addEventListener("click", () => {
-
     if (currentPage < totalPages) {
       currentPage++;
-      loadProducts();
+      renderProducts();
     }
-
   });
 
   document.getElementById("prevPage").addEventListener("click", () => {
-
     if (currentPage > 1) {
       currentPage--;
-      loadProducts();
+      renderProducts();
     }
-
   });
 
-  loadProducts();
+  wireUpFilterUI();
 
+  try {
+    await initCatalogData();
+  } catch (err) {
+    console.error("Failed to init catalog:", err);
+    const grid = document.getElementById("productGrid");
+    if (grid) grid.innerHTML = "<p>Failed to load catalog items.</p>";
+  }
 });
