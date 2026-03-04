@@ -1,5 +1,6 @@
 async function getJSON(url) {
   const res = await fetch(url);
+  if (!res.ok) throw new Error(`${url} -> ${res.status}`);
   return res.json();
 }
 
@@ -10,6 +11,7 @@ function getProductId() {
 
 let selectedRating = 0;
 
+/* Load product */
 async function loadProduct() {
 
   const id = getProductId();
@@ -37,6 +39,7 @@ async function loadProduct() {
   `;
 }
 
+/* Stars */
 function setupStars() {
 
   const stars = document.querySelectorAll(".star");
@@ -45,7 +48,7 @@ function setupStars() {
 
     star.addEventListener("click", () => {
 
-      selectedRating = star.dataset.value;
+      selectedRating = parseInt(star.dataset.value);
 
       stars.forEach(s => s.classList.remove("active"));
 
@@ -59,15 +62,21 @@ function setupStars() {
 
 }
 
-function loadReviews() {
+/* Load reviews */
+async function loadReviews() {
 
   const id = getProductId();
 
-  const reviews = JSON.parse(localStorage.getItem("reviews_" + id)) || [];
+  const reviews = await getJSON(`/api/reviews/${id}`);
 
   const reviewDiv = document.getElementById("reviews");
 
   reviewDiv.innerHTML = "";
+
+  if (!reviews.length) {
+    reviewDiv.innerHTML = "<p>No reviews yet.</p>";
+    return;
+  }
 
   reviews.forEach(r => {
 
@@ -77,7 +86,8 @@ function loadReviews() {
 
     div.innerHTML = `
       <strong>${"⭐".repeat(r.rating)}</strong>
-      <p>${r.text}</p>
+      <p>${r.review_text}</p>
+      <small>By ${r.username} • ${new Date(r.created_at).toLocaleDateString()}</small>
     `;
 
     reviewDiv.appendChild(div);
@@ -86,7 +96,8 @@ function loadReviews() {
 
 }
 
-document.getElementById("submitReview").addEventListener("click", () => {
+/* Submit review */
+document.getElementById("submitReview").addEventListener("click", async () => {
 
   const id = getProductId();
 
@@ -97,21 +108,39 @@ document.getElementById("submitReview").addEventListener("click", () => {
     return;
   }
 
-  const reviews = JSON.parse(localStorage.getItem("reviews_" + id)) || [];
+  if (!text.trim()) {
+    alert("Please write a review");
+    return;
+  }
 
-  reviews.push({
-    rating: selectedRating,
-    text
+  await fetch("/api/reviews", {
+
+    method: "POST",
+
+    headers: {
+      "Content-Type": "application/json"
+    },
+
+    body: JSON.stringify({
+      product_id: id,
+      rating: selectedRating,
+      text: text
+    })
+
   });
 
-  localStorage.setItem("reviews_" + id, JSON.stringify(reviews));
-
   document.getElementById("reviewText").value = "";
+
+  selectedRating = 0;
+
+  const stars = document.querySelectorAll(".star");
+  stars.forEach(s => s.classList.remove("active"));
 
   loadReviews();
 
 });
 
+/* Page load */
 document.addEventListener("DOMContentLoaded", () => {
 
   loadProduct();

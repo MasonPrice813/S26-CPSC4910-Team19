@@ -967,6 +967,56 @@ app.get("/api/points", async (req, res) => {
   }
 });
 
+// ---------------- REVIEWS API ----------------
+
+// Save a review
+app.post("/api/reviews", async (req, res) => {
+  try {
+
+    if (!req.session.user) {
+      return res.status(401).json({ error: "Not logged in" });
+    }
+
+    const { product_id, rating, text } = req.body;
+
+    const username = req.session.user.username;
+
+    await pool.query(
+      `INSERT INTO reviews (product_id, username, rating, review_text)
+       VALUES (?, ?, ?, ?)`,
+      [product_id, username, rating, text]
+    );
+
+    res.json({ ok: true });
+
+  } catch (err) {
+    console.error("Review insert error:", err);
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
+
+// Get reviews for a product
+app.get("/api/reviews/:productId", async (req, res) => {
+  try {
+
+    const productId = req.params.productId;
+
+    const [rows] = await pool.query(
+      `SELECT username, rating, review_text, created_at
+       FROM reviews
+       WHERE product_id = ?
+       ORDER BY created_at DESC`,
+      [productId]
+    );
+
+    res.json(rows);
+
+  } catch (err) {
+    console.error("Review fetch error:", err);
+    res.status(500).json({ error: "Database error" });
+  }
+});
 
 //Start server
 app.listen(PORT, "0.0.0.0", () => {
