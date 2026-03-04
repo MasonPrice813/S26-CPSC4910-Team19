@@ -10,62 +10,109 @@
 <body>
 
 <div class="navbar">
+    <div>
+        <strong>Good Driver Incentive Program</strong>
+        <span class="muted" id="meBadge" style="margin-left:10px;">Loading user...</span>
+    </div>
 
-<div>
-<strong>Good Driver Incentive Program</strong>
-<span class="muted" id="meBadge" style="margin-left:10px;">Loading user...</span>
-</div>
+    <div class="right">
 
-<div class="right">
+        <button id="manageUsersBtn" class="btn btn-primary" style="display:none;">
+            Manage Users
+        </button>
 
-<button id="manageUsersBtn" class="btn btn-primary" style="display:none;">
-Manage Users
-</button>
+        <button id="pendingAppsBtn" class="btn btn-primary" style="display:none;">
+            Pending Driver Apps
+        </button>
 
-<button id="pendingAppsBtn" class="btn btn-primary" style="display:none;">
-Pending Driver Apps
-</button>
+        <button id="createSponsorBtn" class="btn btn-primary" style="display:none;">
+            Create Sponsor User
+        </button>
 
-<button id="createSponsorBtn" class="btn btn-primary" style="display:none;">
-Create Sponsor User
-</button>
+        <button id="profileBtn" class="btn btn-primary">Profile</button>
+        <button id="logoutBtn" class="btn btn-primary">Log out</button>
 
-<button id="profileBtn" class="btn btn-primary">Profile</button>
-<button id="logoutBtn" class="btn btn-primary">Log out</button>
-
-</div>
-
+    </div>
 </div>
 
 <main class="container">
 
-<div class="content-box">
+    <div class="content-box">
 
-<h2>
-Rewards Catalog
-<span style="float:right;">Points: 2000</span>
-</h2>
+        <h2>
+            Rewards Catalog
+            <span id="pointsValue" style="float:right; display:none;">Points: 0</span>
+        </h2>
 
-<p class="info-row">
-Redeem your points for rewards below.
-</p>
+        <p class="info-row">
+            Redeem your points for rewards below.
+        </p>
 
-</div>
+        <div style="margin-top:16px; display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end;">
+        <div style="flex: 1 1 260px; min-width: 220px;">
+            <label class="muted small" for="searchInput">Search</label>
+            <input id="searchInput"
+                type="text"
+                placeholder="Search products by name..."
+                style="width:100%; padding:10px; border-radius:10px; border:1px solid rgba(0,0,0,0.12);" />
+        </div>
 
-<!-- Product Grid -->
-<div id="productGrid" class="product-grid"></div>
+        <div style="flex: 0 1 220px; min-width: 200px;">
+            <label class="muted small" for="categorySelect">Category</label>
+            <select id="categorySelect"
+                style="width:100%; padding:10px; border-radius:10px; border:1px solid rgba(0,0,0,0.12);">
+            <option value="all">All categories</option>
+            </select>
+        </div>
 
-<!-- Pagination -->
-<div style="text-align:center; margin-top:30px;">
+        <div style="flex: 0 1 160px; min-width: 140px;">
+        <label class="muted small" for="minPoints">Min points</label>
+        <input id="minPoints"
+                type="number"
+                min="0"
+                step="10"
+                placeholder="0"
+                style="width:100%; padding:10px; border-radius:10px; border:1px solid rgba(0,0,0,0.12);" />
+        </div>
 
-<button id="prevPage" class="btn btn-primary">Previous</button>
+        <div style="flex: 0 1 160px; min-width: 140px;">
+        <label class="muted small" for="maxPoints">Max points</label>
+        <input id="maxPoints"
+                type="number"
+                min="0"
+                step="10"
+                placeholder="10000"
+                style="width:100%; padding:10px; border-radius:10px; border:1px solid rgba(0,0,0,0.12);" />
+        </div>
 
-<span id="pageNumber" style="margin:0 15px;">Page 1</span>
+        <div style="display:flex; align-items:center; gap:10px; padding:0 6px;">
+            <label class="muted small" style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+            <input id="affordableOnly" type="checkbox" />
+                Affordable only
+            </label>
+        </div>
 
-<button id="nextPage" class="btn btn-primary">Next</button>
+        <div style="display:flex; gap:10px;">
+            <button id="clearFiltersBtn" class="btn btn-primary" type="button">Clear</button>
+        </div>
 
-</div>
+        <div style="width:100%;">
+            <p id="resultsMeta" class="muted small" style="margin:8px 0 0 0;"></p>
+        </div>
+        </div>
+    </div>
 
+    <div id="productGrid" class="product-grid"></div>
+
+    <div style="text-align:center; margin-top:30px;">
+
+        <button id="prevPage" class="btn btn-primary">Previous</button>
+
+        <span id="pageNumber" style="margin:0 15px;">Page 1</span>
+
+        <button id="nextPage" class="btn btn-primary">Next</button>
+
+    </div>
 </main>
 
 <script src="/Website/catalog.js"></script>

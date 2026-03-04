@@ -9,16 +9,30 @@ function getProductId() {
   return params.get("id");
 }
 
+const POINTS_PER_DOLLAR = 10; // 10 points = $1
+
+function dollarsToPoints(priceDollars) {
+  const p = Number(priceDollars);
+  if (!Number.isFinite(p)) return 0;
+  return Math.ceil(p * POINTS_PER_DOLLAR);
+}
+
+function formatDollars(priceDollars) {
+  const p = Number(priceDollars);
+  if (!Number.isFinite(p)) return "$0.00";
+  return `$${p.toFixed(2)}`;
+}
+
 let selectedRating = 0;
 
 /* Load product */
 async function loadProduct() {
-
   const id = getProductId();
-
   const product = await getJSON(`https://dummyjson.com/products/${id}`);
-
   const container = document.getElementById("productContainer");
+
+  const pointsCost = dollarsToPoints(product.price);
+  const dollarsLabel = formatDollars(product.price);
 
   container.innerHTML = `
     <div class="content-box">
@@ -29,7 +43,10 @@ async function loadProduct() {
 
       <p>${product.description}</p>
 
-      <h3>$${product.price}</h3>
+      <div style="margin-top:10px;">
+        <h3 style="margin:0;">${pointsCost} points</h3>
+        <div class="muted small">(${dollarsLabel})</div>
+      </div>
 
       <button class="btn btn-primary" style="margin-top:15px;">
         Redeem
