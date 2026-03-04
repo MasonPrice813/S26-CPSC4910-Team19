@@ -98,9 +98,36 @@ app.get("/", (req, res) => {
 });
 
 
-app.get("/api/me", (req, res) => {
-  if (!req.session.user) return res.status(401).json({ error: "Not logged in" });
-  res.json(req.session.user);
+app.get("/api/me", async (req, res) => {
+  if (!req.session.user) {
+    return res.status(401).json({ error: "Not logged in" });
+  }
+  const me = req.session.user;
+
+  try {
+    if (me.role === "Driver") {
+      const [rows] = await pool.query(
+        `SELECT points
+         FROM drivers
+         WHERE user_id = ?
+         LIMIT 1`,
+        [me.id]
+      );
+
+      const points = rows.length ? Number(rows[0].points || 0) : 0;
+      const userWithPoints = {
+        ...me,
+        points: points
+      };
+
+      return res.json(userWithPoints);
+    }
+    return res.json(me);
+
+  } catch (err) {
+    console.error("/api/me error:", err);
+    res.status(500).json({ error: "Database error" });
+  }
 });
 
 let applicationSchema = { customFields: [] };

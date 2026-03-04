@@ -11,6 +11,8 @@ let totalPages = 1;
 let allProducts = [];
 let filteredProducts = [];
 
+let CURRENT_USER_POINTS = 0;
+
 const POINTS_PER_DOLLAR = 10; // 10 points = $1
 
 function dollarsToPoints(priceDollars) {
@@ -50,7 +52,7 @@ function getFilters() {
 
 function applyFilters() {
   const { q, category, minPoints, maxPoints, affordableOnly } = getFilters();
-  const userPoints = getUserPoints();
+  const userPoints = CURRENT_USER_POINTS;
 
   filteredProducts = allProducts.filter((p) => {
     const title = String(p.title || "").toLowerCase();
@@ -230,6 +232,18 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   try {
     const me = await getJSON("/api/me");
+
+    CURRENT_USER_POINTS = Number(me.points || 0);
+    
+    CURRENT_USER_POINTS = Number(me.points || 0);
+
+    const pointsEl =
+      document.getElementById("pointsValue") ||
+      document.getElementById("pointsBalance");
+
+    if (pointsEl) {
+      pointsEl.textContent = `Points: ${CURRENT_USER_POINTS}`;
+    }
 
     const sponsorText = me.sponsor ? ` • ${me.sponsor}` : "";
     meBadge.textContent = `Logged in as: ${me.role}${sponsorText}`;
