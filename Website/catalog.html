@@ -1,53 +1,74 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Catalog</title>
-    <link rel="stylesheet" href="/Website/about-style.css" />
-  </head>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Catalog</title>
+<link rel="stylesheet" href="/Website/about-style.css">
+</head>
 
-  <body>
-    <div class="navbar">
-      <div>
-        <strong>Good Driver Incentive Program</strong>
-        <span class="muted" id="meBadge" style="margin-left: 10px;">Loading user...</span>
-      </div>
+<body>
 
-      <div class="right">
-        <button id="manageUsersBtn" class="btn btn-primary" style="display:none;">
-          Manage Users
-        </button>
-        <button id="pendingAppsBtn" class="btn btn-primary" style="display:none;">
-          Pending Driver Apps
-        </button>
+<div class="navbar">
 
-        <button id="createSponsorBtn" class="btn btn-primary" style="display:none;">
-          Create Sponsor User
-        </button>
+<div>
+<strong>Good Driver Incentive Program</strong>
+<span class="muted" id="meBadge" style="margin-left:10px;">Loading user...</span>
+</div>
 
-        <button id="profileBtn" class="btn btn-primary">Profile</button>
-        <button id="logoutBtn" class="btn btn-primary">Log out</button>
-      </div>
-    </div>
+<div class="right">
 
-    <main class="container">
+<button id="manageUsersBtn" class="btn btn-primary" style="display:none;">
+Manage Users
+</button>
 
-      <div class="content-box">
-        <h2>
-          Rewards Catalog
-          <span style="float: right;">Points: 2000</span>
-        </h2>
-        <p class="info-row">
-          Redeem your points for rewards below.
-        </p>
-      </div>
+<button id="pendingAppsBtn" class="btn btn-primary" style="display:none;">
+Pending Driver Apps
+</button>
 
-      <!-- Product Grid -->
-      <div id="productGrid" class="product-grid"></div>
+<button id="createSponsorBtn" class="btn btn-primary" style="display:none;">
+Create Sponsor User
+</button>
 
-    </main>
+<button id="profileBtn" class="btn btn-primary">Profile</button>
+<button id="logoutBtn" class="btn btn-primary">Log out</button>
 
-    <script src="/Website/catalog.js"></script>
-  </body>
+</div>
+
+</div>
+
+<main class="container">
+
+<div class="content-box">
+
+<h2>
+Rewards Catalog
+<span style="float:right;">Points: 2000</span>
+</h2>
+
+<p class="info-row">
+Redeem your points for rewards below.
+</p>
+
+</div>
+
+<!-- Product Grid -->
+<div id="productGrid" class="product-grid"></div>
+
+<!-- Pagination -->
+<div style="text-align:center; margin-top:30px;">
+
+<button id="prevPage" class="btn btn-primary">Previous</button>
+
+<span id="pageNumber" style="margin:0 15px;">Page 1</span>
+
+<button id="nextPage" class="btn btn-primary">Next</button>
+
+</div>
+
+</main>
+
+<script src="/Website/catalog.js"></script>
+
+</body>
 </html>

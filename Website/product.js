@@ -14,7 +14,7 @@ async function loadProduct() {
 
   const id = getProductId();
 
-  const product = await getJSON(`https://fakestoreapi.com/products/${id}`);
+  const product = await getJSON(`https://dummyjson.com/products/${id}`);
 
   const container = document.getElementById("productContainer");
 
@@ -23,7 +23,7 @@ async function loadProduct() {
 
       <h2>${product.title}</h2>
 
-      <img src="${product.image}" style="width:300px">
+      <img src="${product.thumbnail}" style="width:300px">
 
       <p>${product.description}</p>
 
