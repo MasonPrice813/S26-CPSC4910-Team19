@@ -36,6 +36,12 @@ async function loadProducts() {
         </div>
       `;
 
+      // Make the entire card clickable to open product page
+      card.style.cursor = "pointer";
+      card.addEventListener("click", () => {
+        window.location.href = `/Website/product.html?id=${product.id}`;
+      });
+
       grid.appendChild(card);
     });
 
@@ -100,6 +106,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  //Load Fake Store Products
+  // Load Fake Store Products
   loadProducts();
 });
