@@ -438,3 +438,65 @@ textarea{
 .product-card {
   padding-bottom: 12px;
 }
+
+
+.sponsor-menu {
+  position: relative;
+  display: inline-block;
+}
+
+.sponsor-menu-btn {
+  outline: none;
+  box-shadow: none;
+}
+
+.sponsor-menu-btn:focus,
+.sponsor-menu-btn:active,
+.sponsor-menu-btn:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.sponsor-dropdown {
+  display: none;
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  min-width: 240px;
+  background: rgba(18, 27, 46, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  padding: 8px;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.28);
+  z-index: 2000;
+}
+
+.sponsor-dropdown.show {
+  display: block;
+}
+
+.sponsor-dropdown-item {
+  width: 100%;
+  display: block;
+  background: transparent;
+  color: white;
+  border: none;
+  border-radius: 10px;
+  padding: 12px 14px;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.sponsor-dropdown-item:hover {
+  background: rgba(255, 255, 255, 0.10);
+}
+
+.sponsor-dropdown-item + .sponsor-dropdown-item {
+  margin-top: 4px;
+}
+
+.caret {
+  font-size: 12px;
+  margin-left: 6px;
+}

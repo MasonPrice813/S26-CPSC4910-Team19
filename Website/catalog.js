@@ -277,14 +277,18 @@ async function initCatalogData() {
 document.addEventListener("DOMContentLoaded", async () => {
   const meBadge = document.getElementById("meBadge");
   const manageUsersBtn = document.getElementById("manageUsersBtn");
+
+  const sponsorMenuWrap = document.getElementById("sponsorMenuWrap");
+  const sponsorMenuBtn = document.getElementById("sponsorMenuBtn");
+  const sponsorDropdown = document.getElementById("sponsorDropdown");
+
   const pendingBtn = document.getElementById("pendingAppsBtn");
   const createSponsorBtn = document.getElementById("createSponsorBtn");
+  const sponsorDashboardBtn = document.getElementById("sponsorDashboardBtn");
 
   try {
     const me = await getJSON("/api/me");
 
-    CURRENT_USER_POINTS = Number(me.points || 0);
-    
     CURRENT_USER_POINTS = Number(me.points || 0);
 
     const pointsEl =
@@ -306,14 +310,31 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     if (me.role === "Sponsor") {
-      pendingBtn.style.display = "inline-block";
+      sponsorMenuWrap.style.display = "inline-block";
+
+      sponsorMenuBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        sponsorDropdown.classList.toggle("show");
+      });
+
       pendingBtn.addEventListener("click", () => {
         window.location.href = "/Website/sponsor-applications.html";
       });
 
-      createSponsorBtn.style.display = "inline-block";
       createSponsorBtn.addEventListener("click", () => {
         window.location.href = "/Website/sponsor-create.html";
+      });
+
+      sponsorDashboardBtn.addEventListener("click", () => {
+        window.location.href = "/Website/sponsor-page.html";
+      });
+
+      document.addEventListener("click", () => {
+        sponsorDropdown.classList.remove("show");
+      });
+
+      sponsorDropdown.addEventListener("click", (e) => {
+        e.stopPropagation();
       });
     }
   } catch (err) {

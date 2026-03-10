@@ -21,13 +21,25 @@
             Manage Users
         </button>
 
-        <button id="pendingAppsBtn" class="btn btn-primary" style="display:none;">
-            Pending Driver Apps
-        </button>
+        <div id="sponsorMenuWrap" class="sponsor-menu" style="display:none;">
+            <button id="sponsorMenuBtn" class="btn btn-primary sponsor-menu-btn" type="button">
+                Sponsor Pages <span class="caret">▼</span>
+            </button>
 
-        <button id="createSponsorBtn" class="btn btn-primary" style="display:none;">
-            Create Sponsor User
-        </button>
+            <div id="sponsorDropdown" class="sponsor-dropdown">
+                <button id="pendingAppsBtn" class="sponsor-dropdown-item" type="button">
+                Pending Driver Apps
+                </button>
+
+                <button id="createSponsorBtn" class="sponsor-dropdown-item" type="button">
+                Create Sponsor User
+                </button>
+
+                <button id="sponsorDashboardBtn" class="sponsor-dropdown-item" type="button">
+                Sponsor Dashboard
+                </button>
+            </div>
+        </div>
 
         <button id="profileBtn" class="btn btn-primary">Profile</button>
         <button id="logoutBtn" class="btn btn-primary">Log out</button>
