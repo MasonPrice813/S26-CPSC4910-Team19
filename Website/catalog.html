@@ -118,7 +118,18 @@
 
     <div id="productGrid" class="product-grid"></div>
 
-    <div style="text-align:center; margin-top:30px;">
+    <div style="display:flex; justify-content:center; align-items:center; gap:18px; flex-wrap:wrap; margin-top:30px;">
+
+        <div style="display:flex; align-items:center; gap:8px;">
+            <label for="pageSizeSelect" class="muted small">Products per page</label>
+            <select id="pageSizeSelect"
+                    style="padding:10px; border-radius:10px; border:1px solid rgba(0,0,0,0.12);">
+                <option value="15">15</option>
+                <option value="30">30</option>
+                <option value="60">60</option>
+                <option value="all">All</option>
+            </select>
+        </div>
 
         <button id="prevPage" class="btn btn-primary">Previous</button>
 

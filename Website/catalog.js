@@ -6,7 +6,7 @@ async function getJSON(url) {
 
 let showFavoritesOnly = false;
 let currentPage = 1;
-const limit = 18;
+let pageSize = 15;
 let totalPages = 1;
 
 let allProducts = [];
@@ -70,6 +70,10 @@ function toggleFavorite(productId) {
   saveFavorites(favs);
 }
 
+function getCurrentPageSize() {
+  return pageSize === "all" ? filteredProducts.length || 1 : Number(pageSize);
+}
+
 function getFilters() {
   const q = (document.getElementById("searchInput")?.value || "").trim().toLowerCase();
   const category = document.getElementById("categorySelect")?.value || "all";
@@ -102,7 +106,8 @@ function applyFilters() {
     return true;
   });
 
-  totalPages = Math.max(1, Math.ceil(filteredProducts.length / limit));
+  const currentLimit = getCurrentPageSize();
+  totalPages = Math.max(1, Math.ceil(filteredProducts.length / currentLimit));
   if (currentPage > totalPages) currentPage = totalPages;
   if (currentPage < 1) currentPage = 1;
 
@@ -115,8 +120,12 @@ function renderProducts() {
 
   if (!grid) return;
 
-  const start = (currentPage - 1) * limit;
-  const pageItems = filteredProducts.slice(start, start + limit);
+  const currentLimit = getCurrentPageSize();
+  const start = (currentPage - 1) * currentLimit;
+  const pageItems =
+    pageSize === "all"
+      ? filteredProducts
+      : filteredProducts.slice(start, start + currentLimit);
 
   grid.innerHTML = "";
 
@@ -268,7 +277,8 @@ async function initCatalogData() {
   allProducts = Array.isArray(data?.products) ? data.products : [];
   filteredProducts = [...allProducts];
 
-  totalPages = Math.max(1, Math.ceil(filteredProducts.length / limit));
+  const currentLimit = getCurrentPageSize();
+  totalPages = Math.max(1, Math.ceil(filteredProducts.length / currentLimit));
   currentPage = 1;
 
   applyFilters();
@@ -375,6 +385,19 @@ document.addEventListener("DOMContentLoaded", async () => {
       renderProducts();
     }
   });
+
+  const pageSizeSelect = document.getElementById("pageSizeSelect");
+
+  if (pageSizeSelect) {
+    pageSizeSelect.value = String(pageSize);
+
+    pageSizeSelect.addEventListener("change", () => {
+      const selected = pageSizeSelect.value;
+      pageSize = selected === "all" ? "all" : Number(selected);
+      currentPage = 1;
+      applyFilters();
+    });
+  }
 
   wireUpFilterUI();
 
