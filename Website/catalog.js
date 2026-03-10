@@ -4,6 +4,7 @@ async function getJSON(url) {
   return res.json();
 }
 
+let showFavoritesOnly = false;
 let currentPage = 1;
 const limit = 18;
 let totalPages = 1;
@@ -40,6 +41,35 @@ function normalizeNumber(val) {
   return Number.isFinite(n) ? n : null;
 }
 
+function getFavorites() {
+  try {
+    const favs = localStorage.getItem("favorites");
+    return favs ? JSON.parse(favs) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveFavorites(favs) {
+  localStorage.setItem("favorites", JSON.stringify(favs));
+}
+
+function isFavorited(productId) {
+  return getFavorites().includes(productId);
+}
+
+function toggleFavorite(productId) {
+  const favs = getFavorites();
+  if (favs.includes(productId)) {
+    const idx = favs.indexOf(productId);
+    favs.splice(idx, 1);
+  } 
+  else {
+    favs.push(productId);
+  }
+  saveFavorites(favs);
+}
+
 function getFilters() {
   const q = (document.getElementById("searchInput")?.value || "").trim().toLowerCase();
   const category = document.getElementById("categorySelect")?.value || "all";
@@ -67,6 +97,7 @@ function applyFilters() {
     if (maxPoints !== null && pointsCost > maxPoints) return false;
 
     if (affordableOnly && pointsCost > userPoints) return false;
+    if (showFavoritesOnly && !isFavorited(p.id)) return false;
 
     return true;
   });
@@ -104,8 +135,11 @@ function renderProducts() {
       const dollarsLabel = formatDollars(product.price);
 
       card.innerHTML = `
-        <div class="card-header">
+        <div class="card-header" style="position:relative;">
           <h3>${product.title}</h3>
+          <button class="favorite-btn" 
+            style="position:absolute; top:8px; right:14px; background:none; border:none; cursor:pointer; font-size:40px; color: ${isFavorited(product.id) ? 'red' : '#ccc'};"> ♥
+          </button>
         </div>
 
         <div style="padding:16px;">
@@ -129,6 +163,15 @@ function renderProducts() {
         </div>
       `;
 
+      const favBtn = card.querySelector(".favorite-btn");
+      if (favBtn) {
+        favBtn.addEventListener("click", (e) => {
+          e.stopPropagation(); 
+          toggleFavorite(product.id);
+          favBtn.style.color = isFavorited(product.id) ? "red" : "#ccc";
+        });
+      } 
+
       card.style.cursor = "pointer";
       card.addEventListener("click", () => {
         window.location.href = `/Website/product.html?id=${product.id}`;
@@ -146,6 +189,13 @@ function renderProducts() {
   if (prevBtn) prevBtn.disabled = currentPage === 1;
   if (nextBtn) nextBtn.disabled = currentPage === totalPages;
 }
+
+// Filtering to just the favorites
+document.getElementById("showFavoritesBtn")?.addEventListener("click", () => {
+  showFavoritesOnly = !showFavoritesOnly;
+  document.getElementById("showFavoritesBtn").textContent = showFavoritesOnly ? "Show All" : "Show Favorites";
+  applyFilters();
+});
 
 function wireUpFilterUI() {
   const searchInput = document.getElementById("searchInput");
