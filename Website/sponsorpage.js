@@ -73,18 +73,65 @@ async function loadDrivers() {
       <td>${driver.points}</td>
       <td>
         <div class="driver-actions">
-          <button class="btn btn-secondary">Edit</button>
-          <button class="btn btn-primary">+ Points</button>
-          <button class="btn btn-secondary">− Points</button>
+          <button class="btn btn-primary addPoints">+ Points</button>
+          <button class="btn btn-secondary subtractPoints">− Points</button>
         </div>
       </td>
     `;
+    // Connect to SQL
+    row.querySelector(".addPoints").onclick = () => {
+      promptAndUpdate(driver.driver_id);
+    };
+    row.querySelector(".subtractPoints").onclick = () => {
+      promptAndUpdate(driver.driver_id);
+    };
 
     tbody.appendChild(row);
   });
 }
 
 document.addEventListener("DOMContentLoaded", loadDrivers);
+
+async function promptAndUpdate(driverId) {
+  // Asking for number of points
+  const amount = parseInt(prompt("Enter number of points (use negative to deduct):"));
+  if (isNaN(amount)) {
+    alert("Invalid number of points.");
+    return;
+  }
+  // Asking for reason 
+  const reason = prompt("Enter the reason for this points adjustment:");
+  if (!reason || reason.trim() === "") {
+    alert("A reason is required.");
+    return;
+  }
+  await updateDriverPoints(driverId, amount, reason);
+}
+
+async function updateAllDrivers() {
+  // Asking for number of points
+  const amount = parseInt(prompt("Enter points to award/deduct for ALL drivers (negative example: -50):"));
+  if (isNaN(amount)) {
+    alert("Invalid number.");
+    return;
+  }
+  // Asking for reason
+  const reason = prompt("Enter reason for the adjustment:");
+  if (!reason) {
+    alert("Reason required.");
+    return;
+  }
+
+  const response = await fetch("/api/sponsor/drivers");
+  const drivers = await response.json();
+
+  for (const driver of drivers) {
+    await updateDriverPoints(driver.driver_id, amount, reason);
+  }
+}
+
+document.getElementById("awardAll").onclick = updateAllDrivers;
+document.getElementById("deductAll").onclick = updateAllDrivers;
 
 /* ============================
    LOAD EXISTING SETTINGS
@@ -141,12 +188,13 @@ saveCriteriaBtn.addEventListener("click", async () => {
    (Ensures DB knows if negative allowed)
 ============================ */
 
-async function updateDriverPoints(driverId, amount) {
+async function updateDriverPoints(driverId, amount, reason) {
 
-  const allowNegative = allowNegativeSelect.value === "true";
+  // NOTE: Need to edit allowing negative funcitonality back in
+  // const allowNegative = allowNegativeSelect.value === "true";
 
   try {
-    await fetch("/api/points/update", {
+    const response = await fetch("/api/points/update", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -154,12 +202,22 @@ async function updateDriverPoints(driverId, amount) {
       body: JSON.stringify({
         driverId: driverId,
         amount: amount,
-        allowNegative: allowNegative
+        reason: reason,
+        // allowNegative: allowNegative
       })
     });
+    
+    // Check if points updated
+    if (!response.ok) {
+      alert("Failed to update points.");
+      return;
+    }
+
+    loadDrivers();
 
   } catch (err) {
     console.error("Point update error:", err);
   }
 }
+
 

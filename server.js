@@ -994,6 +994,28 @@ app.get("/api/points", async (req, res) => {
   }
 });
 
+app.post("/api/points/update", async (req, res) => {
+  try {
+    const { driverId, amount, reason } = req.body;
+
+    if (!driverId || !amount) {
+      return res.status(400).json({ error: "Missing data" });
+    }
+
+    // Using stored procedure call so it goes to the history table
+    await pool.query(
+      "CALL update_driver_points(?, ?, ?)",
+      [driverId, amount, reason || "Sponsor Adjustment"]
+    );
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error("Point update error:", err);
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
 app.get("/api/sponsor/drivers", async (req, res) => {
   try {
     // Check that the user is logged in
