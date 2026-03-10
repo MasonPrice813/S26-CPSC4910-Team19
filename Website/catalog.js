@@ -295,8 +295,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       document.getElementById("pointsValue") ||
       document.getElementById("pointsBalance");
 
-    if (pointsEl) {
+    if (pointsEl && me.role === "Driver") {
       pointsEl.textContent = `Points: ${CURRENT_USER_POINTS}`;
+      pointsEl.style.display = "inline";
     }
 
     const sponsorText = me.sponsor ? ` • ${me.sponsor}` : "";
