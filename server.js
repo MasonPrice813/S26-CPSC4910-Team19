@@ -994,6 +994,38 @@ app.get("/api/points", async (req, res) => {
   }
 });
 
+app.get("/api/sponsor/drivers", async (req, res) => {
+  try {
+    // Check that the user is logged in
+    if (!req.session.user) {
+      return res.status(401).json({ error: "Not logged in" });
+    }
+
+    // Need sponsor ID to find driver's under same sponsor
+    const sponsorId = req.session.user.id;
+
+    const [rows] = await pool.query(`
+      SELECT 
+        drivers.id AS driver_id,
+        users.first_name,
+        users.last_name,
+        users.email,
+        drivers.points
+      FROM drivers
+      JOIN users ON drivers.user_id = users.id
+      JOIN users AS sponsorUser ON sponsorUser.sponsor = users.sponsor
+      WHERE sponsorUser.id = ?
+      AND users.role = 'Driver'
+    `, [sponsorId]);
+
+    res.json(rows);
+
+  } catch (err) {
+    console.error("SQL Connection Error:", err);
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
 // ---------------- REVIEWS API ----------------
 
 // Save a review

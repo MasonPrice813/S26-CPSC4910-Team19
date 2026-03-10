@@ -56,6 +56,37 @@ driverFilterSelect?.addEventListener("change", renderChart);
 renderChart();
 
 /* ============================
+   LOADING DRIVER'S POINTS TABLE
+============================ */
+async function loadDrivers() {
+  const response = await fetch("/api/sponsor/drivers");
+  const drivers = await response.json();
+  const tbody = document.querySelector(".driver-table tbody");
+  tbody.innerHTML = "";
+
+  drivers.forEach(driver => {
+    const row = document.createElement("tr");
+
+    row.innerHTML = `
+      <td>${driver.first_name} ${driver.last_name}</td>
+      <td>${driver.email}</td>
+      <td>${driver.points}</td>
+      <td>
+        <div class="driver-actions">
+          <button class="btn btn-secondary">Edit</button>
+          <button class="btn btn-primary">+ Points</button>
+          <button class="btn btn-secondary">− Points</button>
+        </div>
+      </td>
+    `;
+
+    tbody.appendChild(row);
+  });
+}
+
+document.addEventListener("DOMContentLoaded", loadDrivers);
+
+/* ============================
    LOAD EXISTING SETTINGS
 ============================ */
 
@@ -131,3 +162,4 @@ async function updateDriverPoints(driverId, amount) {
     console.error("Point update error:", err);
   }
 }
+
