@@ -18,6 +18,9 @@ let filteredProducts = [];
 let CURRENT_USER_POINTS = 0;
 let selectedShipping = "standard";
 
+let recommendedProducts = [];
+let purchasedProductIds = [];
+
 const POINTS_PER_DOLLAR = 10; // 10 points = $1
 
 function dollarsToPoints(priceDollars) {
@@ -169,6 +172,7 @@ function addToCart(product) {
   updateCartBadge();
   updatePointsDisplay();
   renderCartPanel();
+  renderRecommendedProducts();
   applyFilters();
 }
 
@@ -186,6 +190,7 @@ function removeFromCart(productId) {
   updateCartBadge();
   updatePointsDisplay();
   renderCartPanel();
+  renderRecommendedProducts();
   applyFilters();
 }
 
@@ -195,6 +200,7 @@ function clearCart() {
   updateCartBadge();
   updatePointsDisplay();
   renderCartPanel();
+  renderRecommendedProducts();
   applyFilters();
 }
 
@@ -294,6 +300,188 @@ function renderCheckoutSummary() {
 
   if (confirmCheckoutBtn) {
     confirmCheckoutBtn.disabled = cart.length === 0 || !enoughPoints;
+  }
+}
+
+function getTagList(product) {
+  return Array.isArray(product?.tags) ? product.tags.map(String) : [];
+}
+
+function buildRecommendationScores(products, purchasedIds) {
+  const purchasedSet = new Set(purchasedIds.map(Number));
+  const purchasedProducts = products.filter((p) => purchasedSet.has(Number(p.id)));
+
+  if (purchasedProducts.length === 0) return [];
+
+  const categoryCounts = new Map();
+  const brandCounts = new Map();
+  const tagCounts = new Map();
+
+  for (const product of purchasedProducts) {
+    const category = String(product.category || "");
+    const brand = String(product.brand || "");
+
+    if (category) {
+      categoryCounts.set(category, (categoryCounts.get(category) || 0) + 1);
+    }
+
+    if (brand) {
+      brandCounts.set(brand, (brandCounts.get(brand) || 0) + 1);
+    }
+
+    for (const tag of getTagList(product)) {
+      tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
+    }
+  }
+
+  const availablePoints = getAvailablePoints();
+
+  const candidates = products
+    .filter((product) => !purchasedSet.has(Number(product.id)))
+    .map((product) => {
+      const category = String(product.category || "");
+      const brand = String(product.brand || "");
+      const tags = getTagList(product);
+      const pointsCost = dollarsToPoints(product.price);
+
+      let score = 0;
+
+      score += (categoryCounts.get(category) || 0) * 5;
+      score += (brandCounts.get(brand) || 0) * 2;
+
+      for (const tag of tags) {
+        score += (tagCounts.get(tag) || 0);
+      }
+
+      score += Number(product.rating || 0) * 0.25;
+
+      return { product, score, pointsCost };
+    })
+    .filter((entry) => entry.score > 0)
+    .filter((entry) => entry.pointsCost <= availablePoints)
+    .sort((a, b) => b.score - a.score);
+    
+  return candidates.map((entry) => entry.product);
+}
+
+function renderRecommendedProducts() {
+  const section = document.getElementById("recommendedSection");
+  const grid = document.getElementById("recommendedGrid");
+  const subtitle = document.getElementById("recommendedSubtitle");
+
+  if (!section || !grid) return;
+
+  grid.innerHTML = "";
+
+  if (!recommendedProducts.length) {
+    section.style.display = "none";
+    return;
+  }
+
+  section.style.display = "block";
+
+  if (subtitle) {
+    subtitle.textContent = "Based on items you have ordered before.";
+  }
+
+  recommendedProducts.slice(0, 4).forEach((product) => {
+    const pointsCost = dollarsToPoints(product.price);
+    const dollarsLabel = formatDollars(product.price);
+
+    const totalItemsInCart = getCartItemCount();
+    const availablePoints = getAvailablePoints();
+    const itemAffordable = pointsCost <= availablePoints;
+    const cartHasSpace = totalItemsInCart < 4;
+
+    let redeemLabel = "Redeem";
+    let redeemDisabled = false;
+
+    if (!cartHasSpace) {
+      redeemLabel = "Cart Full";
+      redeemDisabled = true;
+    } else if (!itemAffordable) {
+      redeemLabel = "Not Enough Points";
+      redeemDisabled = true;
+    }
+
+    const card = document.createElement("div");
+    card.className = "card product-card";
+
+    card.innerHTML = `
+      <div class="card-header" style="position:relative;">
+        <h3>${product.title}</h3>
+        <span class="muted small"
+              style="position:absolute; top:10px; right:14px; font-weight:600;">
+          Recommended
+        </span>
+      </div>
+
+      <div style="padding:16px;">
+        <img src="${product.thumbnail}"
+             alt="${product.title}"
+             style="width:100%; height:200px; object-fit:contain; margin-bottom:12px;" />
+
+        <p class="muted small" style="min-height:60px;">
+          ${String(product.description || "").substring(0, 100)}...
+        </p>
+
+        <div style="margin-top:10px; display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">
+          <div>
+            <strong>${pointsCost} points</strong>
+            <div class="muted small" style="margin-top:2px;">(${dollarsLabel})</div>
+          </div>
+          <button class="btn btn-primary redeem-btn" type="button" ${redeemDisabled ? "disabled" : ""}>
+            ${redeemLabel}
+          </button>
+        </div>
+      </div>
+    `;
+
+    const redeemBtn = card.querySelector(".redeem-btn");
+    if (redeemBtn) {
+      redeemBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        addToCart(product);
+      });
+    }
+
+    card.style.cursor = "pointer";
+    card.addEventListener("click", () => {
+      window.location.href = `/Website/product.html?id=${product.id}`;
+    });
+
+    grid.appendChild(card);
+  });
+}
+
+async function loadRecommendations() {
+  const section = document.getElementById("recommendedSection");
+
+  if (!section) return;
+
+  try {
+    const me = await getJSON("/api/me");
+
+    if (me.role !== "Driver") {
+      section.style.display = "none";
+      return;
+    }
+
+    const data = await getJSON("/api/recommendations");
+    purchasedProductIds = Array.isArray(data?.purchasedProductIds)
+      ? data.purchasedProductIds.map(Number)
+      : [];
+
+    if (!purchasedProductIds.length) {
+      section.style.display = "none";
+      return;
+    }
+
+    recommendedProducts = buildRecommendationScores(allProducts, purchasedProductIds).slice(0, 4);
+    renderRecommendedProducts();
+  } catch (err) {
+    console.error("Failed to load recommendations:", err);
+    section.style.display = "none";
   }
 }
 
@@ -814,6 +1002,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   try {
     await initCatalogData();
+    await loadRecommendations();
   } catch (err) {
     console.error("Failed to init catalog:", err);
     const grid = document.getElementById("productGrid");

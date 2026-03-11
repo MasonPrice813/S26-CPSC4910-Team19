@@ -1287,6 +1287,32 @@ app.post("/api/orders/checkout", requireLogin, async (req, res) => {
   }
 });
 
+app.get("/api/recommendations", requireLogin, async (req, res) => {
+  try {
+    if (req.session.user.role !== "Driver") {
+      return res.json({ purchasedProductIds: [] });
+    }
+
+    const [rows] = await pool.query(
+      `
+      SELECT product_id, COUNT(*) AS purchase_count, MAX(date_ordered) AS last_ordered
+      FROM orders
+      WHERE user_id = ?
+      GROUP BY product_id
+      ORDER BY purchase_count DESC, last_ordered DESC
+      `,
+      [req.session.user.id]
+    );
+
+    const purchasedProductIds = rows.map((row) => Number(row.product_id));
+
+    res.json({ purchasedProductIds });
+  } catch (err) {
+    console.error("recommendations error:", err);
+    res.status(500).json({ error: "Could not load recommendations." });
+  }
+});
+
 //Start server
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on http://localhost:${PORT}`);
