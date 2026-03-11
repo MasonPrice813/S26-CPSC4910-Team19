@@ -16,6 +16,7 @@ let allProducts = [];
 let filteredProducts = [];
 
 let CURRENT_USER_POINTS = 0;
+let selectedShipping = "standard";
 
 const POINTS_PER_DOLLAR = 10; // 10 points = $1
 
@@ -56,8 +57,27 @@ function getCartPointsTotal() {
   return cart.reduce((sum, item) => sum + (item.pointCost * item.qty), 0);
 }
 
+function getCartDollarTotal() {
+  return cart.reduce((sum, item) => sum + (item.dollarCost * item.qty), 0);
+}
+
+function getShippingDollarCost() {
+  if (selectedShipping === "overnight") {
+    return getCartDollarTotal() * 0.20;
+  }
+  return 0;
+}
+
+function getShippingPointCost() {
+  return dollarsToPoints(getShippingDollarCost());
+}
+
+function getCheckoutPointsTotal() {
+  return getCartPointsTotal() + getShippingPointCost();
+}
+
 function getAvailablePoints() {
-  return Math.max(0, CURRENT_USER_POINTS - getCartPointsTotal());
+  return Math.max(0, CURRENT_USER_POINTS - getCheckoutPointsTotal());
 }
 
 function updatePointsDisplay() {
@@ -152,6 +172,7 @@ function renderCartPanel() {
   const cartPanel = document.getElementById("cartPanel");
   const cartItems = document.getElementById("cartItems");
   const cartTotalPoints = document.getElementById("cartTotalPoints");
+  const checkoutPanel = document.getElementById("checkoutPanel");
 
   if (!cartPanel || !cartItems || !cartTotalPoints) return;
 
@@ -159,40 +180,83 @@ function renderCartPanel() {
 
   if (cart.length === 0) {
     cartItems.innerHTML = `<p class="muted">Your cart is empty.</p>`;
-  } else {
-    cart.forEach((item) => {
-      const row = document.createElement("div");
-      row.style.display = "flex";
-      row.style.justifyContent = "space-between";
-      row.style.alignItems = "center";
-      row.style.gap = "12px";
-      row.style.padding = "10px 0";
-      row.style.borderBottom = "1px solid rgba(0,0,0,0.08)";
+    cartTotalPoints.textContent = `Total: 0 points`;
 
-      row.innerHTML = `
-        <div style="display:flex; align-items:center; gap:12px;">
-          <img src="${item.thumbnail}" alt="${item.title}" style="width:56px; height:56px; object-fit:contain;" />
-          <div>
-            <div><strong>${item.title}</strong></div>
-            <div class="muted small">
-              Qty: ${item.qty} • ${item.pointCost} points each (${formatDollars(item.dollarCost)})
-            </div>
-          </div>
-        </div>
+    if (checkoutPanel) {
+      checkoutPanel.style.display = "none";
+    }
 
-        <button class="btn btn-primary remove-cart-btn" type="button">Remove</button>
-      `;
-
-      const removeBtn = row.querySelector(".remove-cart-btn");
-      removeBtn.addEventListener("click", () => {
-        removeFromCart(item.productId);
-      });
-
-      cartItems.appendChild(row);
-    });
+    renderCheckoutSummary();
+    return;
   }
 
-  cartTotalPoints.textContent = `Total: ${getCartPointsTotal()} points`;
+  cart.forEach((item) => {
+    const row = document.createElement("div");
+    row.style.display = "flex";
+    row.style.justifyContent = "space-between";
+    row.style.alignItems = "center";
+    row.style.gap = "12px";
+    row.style.padding = "10px 0";
+    row.style.borderBottom = "1px solid rgba(0,0,0,0.08)";
+
+    row.innerHTML = `
+      <div style="display:flex; align-items:center; gap:12px;">
+        <img src="${item.thumbnail}" alt="${item.title}" style="width:56px; height:56px; object-fit:contain;" />
+        <div>
+          <div><strong>${item.title}</strong></div>
+          <div class="muted small">
+            Qty: ${item.qty} • ${item.pointCost} points each (${formatDollars(item.dollarCost)})
+          </div>
+        </div>
+      </div>
+
+      <button class="btn btn-primary remove-cart-btn" type="button">Remove</button>
+    `;
+
+    const removeBtn = row.querySelector(".remove-cart-btn");
+    removeBtn.addEventListener("click", () => {
+      removeFromCart(item.productId);
+    });
+
+    cartItems.appendChild(row);
+  });
+
+  cartTotalPoints.textContent = `Items total: ${getCartPointsTotal()} points`;
+
+  if (checkoutPanel) {
+    checkoutPanel.style.display = "block";
+  }
+
+  renderCheckoutSummary();
+}
+
+function renderCheckoutSummary() {
+  const checkoutSummary = document.getElementById("checkoutSummary");
+  const confirmCheckoutBtn = document.getElementById("confirmCheckoutBtn");
+
+  if (!checkoutSummary) return;
+
+  const itemPoints = getCartPointsTotal();
+  const itemDollars = getCartDollarTotal();
+  const shippingPoints = getShippingPointCost();
+  const shippingDollars = getShippingDollarCost();
+  const totalPoints = getCheckoutPointsTotal();
+  const remainingPoints = Math.max(0, CURRENT_USER_POINTS - totalPoints);
+  const enoughPoints = totalPoints <= CURRENT_USER_POINTS;
+
+  checkoutSummary.innerHTML = `
+    <div class="muted small" style="display:grid; gap:8px;">
+      <div>Items subtotal: <strong>${itemPoints} points</strong> (${formatDollars(itemDollars)})</div>
+      <div>Shipping: <strong>${shippingPoints} points</strong> (${formatDollars(shippingDollars)})</div>
+      <div>Total checkout cost: <strong>${totalPoints} points</strong></div>
+      <div>Points after checkout: <strong>${remainingPoints}</strong></div>
+      ${!enoughPoints ? `<div style="color:#b00020;"><strong>Not enough points for this checkout.</strong></div>` : ""}
+    </div>
+  `;
+
+  if (confirmCheckoutBtn) {
+    confirmCheckoutBtn.disabled = cart.length === 0 || !enoughPoints;
+  }
 }
 
 function normalizeNumber(val) {
@@ -487,6 +551,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   const cartPanel = document.getElementById("cartPanel");
   const clearCartBtn = document.getElementById("clearCartBtn");
 
+  const shippingSelect = document.getElementById("shippingSelect");
+  const confirmCheckoutBtn = document.getElementById("confirmCheckoutBtn");
+  const cancelCheckoutBtn = document.getElementById("cancelCheckoutBtn");
+  const checkoutPanel = document.getElementById("checkoutPanel");
+
   try {
     const me = await getJSON("/api/me");
 
@@ -517,6 +586,65 @@ document.addEventListener("DOMContentLoaded", async () => {
           clearCart();
         });
       }
+
+      if (shippingSelect) {
+        shippingSelect.value = selectedShipping;
+
+        shippingSelect.addEventListener("change", () => {
+          selectedShipping = shippingSelect.value;
+          updatePointsDisplay();
+          renderCheckoutSummary();
+          applyFilters();
+        });
+      }
+
+      if (cancelCheckoutBtn) {
+        cancelCheckoutBtn.addEventListener("click", () => {
+          if (checkoutPanel) {
+            checkoutPanel.style.display = "none";
+          }
+        });
+      }
+
+      if (confirmCheckoutBtn) {
+        confirmCheckoutBtn.addEventListener("click", () => {
+          if (cart.length === 0) {
+            alert("Your cart is empty.");
+            return;
+          }
+
+          const totalPoints = getCheckoutPointsTotal();
+
+          if (totalPoints > CURRENT_USER_POINTS) {
+            alert("You do not have enough points for this checkout.");
+            return;
+          }
+
+          const shippingLabel =
+            selectedShipping === "overnight"
+              ? "Expedited Overnight (+20%)"
+              : "Standard Shipping (Free)";
+
+          const confirmed = window.confirm(
+            `Confirm checkout?\n\n` +
+            `Items: ${getCartItemCount()}\n` +
+            `Shipping: ${shippingLabel}\n` +
+            `Total: ${totalPoints} points`
+          );
+
+          if (!confirmed) return;
+
+          alert("Checkout confirmed. Backend order placement will be the next step.");
+
+          clearCart();
+
+          if (checkoutPanel) {
+            checkoutPanel.style.display = "none";
+          }
+        });
+      }
+
+      renderCartPanel();
     }
 
     const sponsorText = me.sponsor ? ` • ${me.sponsor}` : "";

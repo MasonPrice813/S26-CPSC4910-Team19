@@ -134,6 +134,29 @@
         </div>
     </div>
 
+    <div id="checkoutPanel" class="content-box" style="display:none; margin-top:16px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+            <h3 style="margin:0;">Checkout</h3>
+            <div class="muted small">Choose shipping before placing your order</div>
+        </div>
+
+        <div style="margin-top:14px;">
+            <label class="muted small" for="shippingSelect">Shipping</label>
+            <select id="shippingSelect"
+                    style="width:100%; max-width:320px; padding:10px; border-radius:10px; border:1px solid rgba(0,0,0,0.12);">
+            <option value="standard">Standard Shipping (Free)</option>
+            <option value="overnight">Expedited Overnight (+20%)</option>
+            </select>
+        </div>
+
+        <div id="checkoutSummary" style="margin-top:16px;"></div>
+
+        <div style="display:flex; gap:10px; margin-top:16px; flex-wrap:wrap;">
+            <button id="confirmCheckoutBtn" class="btn btn-primary" type="button">Confirm Checkout</button>
+            <button id="cancelCheckoutBtn" class="btn btn-secondary" type="button">Cancel</button>
+        </div>
+    </div>
+    
     <button id="showFavoritesBtn" class="btn btn-secondary" style="margin-bottom:10px;">Show Favorites</button>
 
     <div id="productGrid" class="product-grid"></div>
