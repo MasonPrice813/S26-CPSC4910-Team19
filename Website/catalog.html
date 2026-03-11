@@ -118,6 +118,19 @@
         </div>
     </div>
 
+    <div id="recommendedSection" class="content-box" style="display:none; margin-top:16px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+            <div>
+                <h3 style="margin:0;">Recommended for You</h3>
+                <div class="muted small" id="recommendedSubtitle" style="margin-top:6px;">
+                    Products similar to items you have ordered before.
+                </div>
+            </div>
+        </div>
+
+        <div id="recommendedGrid" class="product-grid" style="margin-top:16px;"></div>
+    </div>
+
     <div id="cartPanel" class="content-box" style="display:none; margin-top:16px;">
         <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
             <h3 style="margin:0;">Cart</h3>
@@ -156,7 +169,7 @@
             <button id="cancelCheckoutBtn" class="btn btn-secondary" type="button">Cancel</button>
         </div>
     </div>
-    
+
     <button id="showFavoritesBtn" class="btn btn-secondary" style="margin-bottom:10px;">Show Favorites</button>
 
     <div id="productGrid" class="product-grid"></div>
