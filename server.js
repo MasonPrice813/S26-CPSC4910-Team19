@@ -1099,6 +1099,194 @@ app.get("/api/reviews/:productId", async (req, res) => {
   }
 });
 
+function addBusinessDays(startDate, businessDays) {
+  const date = new Date(startDate);
+  let added = 0;
+
+  while (added < businessDays) {
+    date.setDate(date.getDate() + 1);
+
+    const day = date.getDay(); // 0 = Sunday, 6 = Saturday
+    if (day !== 0 && day !== 6) {
+      added++;
+    }
+  }
+
+  return date;
+}
+
+function toMySQLDate(date) {
+  return date.toISOString().slice(0, 10); // YYYY-MM-DD
+}
+
+function getExpectedDeliveryDate(shippingMethod) {
+  const businessDays = shippingMethod === "overnight" ? 3 : 7;
+  return toMySQLDate(addBusinessDays(new Date(), businessDays));
+}
+
+app.post("/api/orders/checkout", requireLogin, async (req, res) => {
+  const me = req.session.user;
+
+  if (me.role !== "Driver") {
+    return res.status(403).json({ error: "Drivers only" });
+  }
+
+  const { items, shipping_method, shipping_point_cost, shipping_dollar_cost } = req.body || {};
+
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: "Cart is empty." });
+  }
+
+  if (items.length > 4) {
+    return res.status(400).json({ error: "Cart cannot have more than 4 items." });
+  }
+
+  const allowedShipping = ["standard", "overnight"];
+  if (!allowedShipping.includes(shipping_method)) {
+    return res.status(400).json({ error: "Invalid shipping method." });
+  }
+
+  const expectedDeliveryDate = getExpectedDeliveryDate(shipping_method);
+
+  const cleanShippingPointCost = Number(shipping_point_cost || 0);
+  const cleanShippingDollarCost = Number(shipping_dollar_cost || 0);
+
+  if (!Number.isFinite(cleanShippingPointCost) || cleanShippingPointCost < 0) {
+    return res.status(400).json({ error: "Invalid shipping point cost." });
+  }
+
+  if (!Number.isFinite(cleanShippingDollarCost) || cleanShippingDollarCost < 0) {
+    return res.status(400).json({ error: "Invalid shipping dollar cost." });
+  }
+
+  const normalizedItems = [];
+
+  for (const item of items) {
+    const productId = Number(item.productId);
+    const pointCost = Number(item.pointCost);
+    const dollarCost = Number(item.dollarCost);
+    const qty = Number(item.qty || 0);
+
+    if (!Number.isInteger(productId) || productId <= 0) {
+      return res.status(400).json({ error: "Invalid product id in cart." });
+    }
+
+    if (!Number.isFinite(pointCost) || pointCost < 0) {
+      return res.status(400).json({ error: "Invalid point cost in cart." });
+    }
+
+    if (!Number.isFinite(dollarCost) || dollarCost < 0) {
+      return res.status(400).json({ error: "Invalid dollar cost in cart." });
+    }
+
+    if (!Number.isInteger(qty) || qty <= 0) {
+      return res.status(400).json({ error: "Invalid quantity in cart." });
+    }
+
+    normalizedItems.push({
+      productId,
+      pointCost,
+      dollarCost,
+      qty
+    });
+  }
+
+  const itemsPointTotal = normalizedItems.reduce((sum, item) => {
+    return sum + (item.pointCost * item.qty);
+  }, 0);
+
+  const totalPointCost = itemsPointTotal + cleanShippingPointCost;
+
+  const conn = await pool.getConnection();
+
+  try {
+    await conn.beginTransaction();
+
+    const [driverRows] = await conn.query(
+      `SELECT id, points
+       FROM drivers
+       WHERE user_id = ?
+       LIMIT 1
+       FOR UPDATE`,
+      [me.id]
+    );
+
+    if (driverRows.length === 0) {
+      await conn.rollback();
+      return res.status(404).json({ error: "Driver record not found." });
+    }
+
+    const driverId = driverRows[0].id;
+    const currentPoints = Number(driverRows[0].points || 0);
+
+    if (currentPoints < totalPointCost) {
+      await conn.rollback();
+      return res.status(400).json({
+        error: "Not enough points.",
+        currentPoints,
+        totalPointCost
+      });
+    }
+
+    const groupId = crypto.randomUUID();
+
+    for (const item of normalizedItems) {
+      for (let i = 0; i < item.qty; i++) {
+        await conn.query(
+          `INSERT INTO orders
+              (group_id, user_id, product_id, point_cost, dollar_cost, shipping_method, expected_delivery_date, date_ordered)
+            VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`,
+          [
+            groupId,
+            me.id,
+            item.productId,
+            item.pointCost,
+            item.dollarCost,
+            shipping_method,
+            expectedDeliveryDate
+          ]
+        );
+      }
+    }
+
+    await conn.query(
+      `UPDATE drivers
+       SET points = points - ?
+       WHERE user_id = ?`,
+      [totalPointCost, me.id]
+    );
+
+    await conn.query(
+      `INSERT INTO driver_point_history
+         (driver_id, points_change, points_before, points_after, reason, created_at)
+       VALUES (?, ?, ?, ?, ?, NOW())`,
+      [
+        driverId,
+        -totalPointCost,
+        currentPoints,
+        currentPoints - totalPointCost,
+        `Catalog checkout (${shipping_method}, shipping ${cleanShippingPointCost} pts)`
+      ]
+    );
+
+    await conn.commit();
+
+    return res.json({
+      ok: true,
+      group_id: groupId,
+      totalPointCost,
+      remainingPoints: currentPoints - totalPointCost
+    });
+
+  } catch (err) {
+    await conn.rollback();
+    console.error("checkout error:", err);
+    return res.status(500).json({ error: "Checkout failed." });
+  } finally {
+    conn.release();
+  }
+});
+
 //Start server
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on http://localhost:${PORT}`);

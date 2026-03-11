@@ -76,6 +76,36 @@ function getCheckoutPointsTotal() {
   return getCartPointsTotal() + getShippingPointCost();
 }
 
+function addBusinessDays(startDate, businessDays) {
+  const date = new Date(startDate);
+  let added = 0;
+
+  while (added < businessDays) {
+    date.setDate(date.getDate() + 1);
+
+    const day = date.getDay(); // 0 = Sunday, 6 = Saturday
+    if (day !== 0 && day !== 6) {
+      added++;
+    }
+  }
+
+  return date;
+}
+
+function formatDateLong(date) {
+  return date.toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric"
+  });
+}
+
+function getExpectedDeliveryDate() {
+  const businessDays = selectedShipping === "overnight" ? 3 : 7;
+  return addBusinessDays(new Date(), businessDays);
+}
+
 function getAvailablePoints() {
   return Math.max(0, CURRENT_USER_POINTS - getCheckoutPointsTotal());
 }
@@ -244,12 +274,20 @@ function renderCheckoutSummary() {
   const remainingPoints = Math.max(0, CURRENT_USER_POINTS - totalPoints);
   const enoughPoints = totalPoints <= CURRENT_USER_POINTS;
 
+  const expectedDeliveryDate = getExpectedDeliveryDate();
+  const expectedDeliveryLabel = formatDateLong(expectedDeliveryDate);
+
   checkoutSummary.innerHTML = `
     <div class="muted small" style="display:grid; gap:8px;">
       <div>Items subtotal: <strong>${itemPoints} points</strong> (${formatDollars(itemDollars)})</div>
       <div>Shipping: <strong>${shippingPoints} points</strong> (${formatDollars(shippingDollars)})</div>
       <div>Total checkout cost: <strong>${totalPoints} points</strong></div>
       <div>Points after checkout: <strong>${remainingPoints}</strong></div>
+      <div>
+        Expected delivery:
+        <strong>${expectedDeliveryLabel}</strong>
+        ${selectedShipping === "overnight" ? "(3 business days)" : "(7 business days)"}
+      </div>
       ${!enoughPoints ? `<div style="color:#b00020;"><strong>Not enough points for this checkout.</strong></div>` : ""}
     </div>
   `;
@@ -607,7 +645,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
 
       if (confirmCheckoutBtn) {
-        confirmCheckoutBtn.addEventListener("click", () => {
+        confirmCheckoutBtn.addEventListener("click", async () => {
           if (cart.length === 0) {
             alert("Your cart is empty.");
             return;
@@ -634,12 +672,48 @@ document.addEventListener("DOMContentLoaded", async () => {
 
           if (!confirmed) return;
 
-          alert("Checkout confirmed. Backend order placement will be the next step.");
+          confirmCheckoutBtn.disabled = true;
 
-          clearCart();
+          try {
+            const res = await fetch("/api/orders/checkout", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json"
+              },
+              credentials: "same-origin",
+              body: JSON.stringify({
+                items: cart,
+                shipping_method: selectedShipping,
+                shipping_point_cost: getShippingPointCost(),
+                shipping_dollar_cost: getShippingDollarCost()
+              })
+            });
 
-          if (checkoutPanel) {
-            checkoutPanel.style.display = "none";
+            const data = await res.json();
+
+            if (!res.ok) {
+              throw new Error(data.error || "Checkout failed.");
+            }
+
+            CURRENT_USER_POINTS = Number(data.remainingPoints || 0);
+            clearCart();
+
+            if (checkoutPanel) {
+              checkoutPanel.style.display = "none";
+            }
+
+            updatePointsDisplay();
+            updateCartBadge();
+            renderCartPanel();
+            applyFilters();
+
+            alert("Order placed successfully.");
+
+          } catch (err) {
+            console.error("Checkout failed:", err);
+            alert(err.message || "Checkout failed.");
+          } finally {
+            confirmCheckoutBtn.disabled = false;
           }
         });
       }
