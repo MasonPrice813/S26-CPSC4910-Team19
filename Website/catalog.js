@@ -9,10 +9,14 @@ let currentPage = 1;
 let pageSize = 15;
 let totalPages = 1;
 
+let CURRENT_USER_ID = null;
+let cart = [];
+
 let allProducts = [];
 let filteredProducts = [];
 
 let CURRENT_USER_POINTS = 0;
+let selectedShipping = "standard";
 
 const POINTS_PER_DOLLAR = 10; // 10 points = $1
 
@@ -28,11 +32,269 @@ function formatDollars(priceDollars) {
   return `$${p.toFixed(2)}`;
 }
 
-function getUserPoints() {
-  const el = document.getElementById("pointsBalance");
-  if (!el) return 0;
-  const m = String(el.textContent || "").match(/(\d+)/);
-  return m ? Number(m[1]) : 0;
+function getCartStorageKey() {
+  return CURRENT_USER_ID ? `catalogCart_${CURRENT_USER_ID}` : "catalogCart_guest";
+}
+
+function loadCart() {
+  try {
+    const raw = localStorage.getItem(getCartStorageKey());
+    cart = raw ? JSON.parse(raw) : [];
+  } catch {
+    cart = [];
+  }
+}
+
+function saveCart() {
+  localStorage.setItem(getCartStorageKey(), JSON.stringify(cart));
+}
+
+function getCartItemCount() {
+  return cart.reduce((sum, item) => sum + item.qty, 0);
+}
+
+function getCartPointsTotal() {
+  return cart.reduce((sum, item) => sum + (item.pointCost * item.qty), 0);
+}
+
+function getCartDollarTotal() {
+  return cart.reduce((sum, item) => sum + (item.dollarCost * item.qty), 0);
+}
+
+function getShippingDollarCost() {
+  if (selectedShipping === "overnight") {
+    return getCartDollarTotal() * 0.20;
+  }
+  return 0;
+}
+
+function getShippingPointCost() {
+  return dollarsToPoints(getShippingDollarCost());
+}
+
+function getCheckoutPointsTotal() {
+  return getCartPointsTotal() + getShippingPointCost();
+}
+
+function addBusinessDays(startDate, businessDays) {
+  const date = new Date(startDate);
+  let added = 0;
+
+  while (added < businessDays) {
+    date.setDate(date.getDate() + 1);
+
+    const day = date.getDay(); // 0 = Sunday, 6 = Saturday
+    if (day !== 0 && day !== 6) {
+      added++;
+    }
+  }
+
+  return date;
+}
+
+function formatDateLong(date) {
+  return date.toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric"
+  });
+}
+
+function getExpectedDeliveryDate() {
+  const businessDays = selectedShipping === "overnight" ? 3 : 7;
+  return addBusinessDays(new Date(), businessDays);
+}
+
+function getAvailablePoints() {
+  return Math.max(0, CURRENT_USER_POINTS - getCheckoutPointsTotal());
+}
+
+function updatePointsDisplay() {
+  const pointsEl =
+    document.getElementById("pointsValue") ||
+    document.getElementById("pointsBalance");
+
+  if (pointsEl) {
+    pointsEl.textContent = `Points: ${getAvailablePoints()}`;
+    pointsEl.style.display = "inline";
+  }
+}
+
+function updateCartBadge() {
+  const cartCount = document.getElementById("cartCount");
+  if (cartCount) {
+    cartCount.textContent = String(getCartItemCount());
+  }
+}
+
+function isProductInCart(productId) {
+  return cart.some(item => item.productId === productId);
+}
+
+function canAffordProduct(product) {
+  return dollarsToPoints(product.price) <= getAvailablePoints();
+}
+
+function addToCart(product) {
+  const totalItems = getCartItemCount();
+  const pointCost = dollarsToPoints(product.price);
+
+  if (totalItems >= 4) {
+    alert("Your cart can only hold up to 4 items.");
+    return;
+  }
+
+  if (pointCost > getAvailablePoints()) {
+    alert("You do not have enough points for this item.");
+    return;
+  }
+
+  const existing = cart.find(item => item.productId === product.id);
+
+  if (existing) {
+    existing.qty += 1;
+  } else {
+    cart.push({
+      productId: product.id,
+      title: product.title,
+      thumbnail: product.thumbnail,
+      dollarCost: Number(product.price),
+      pointCost: pointCost,
+      qty: 1
+    });
+  }
+
+  saveCart();
+  updateCartBadge();
+  updatePointsDisplay();
+  renderCartPanel();
+  applyFilters();
+}
+
+function removeFromCart(productId) {
+  const idx = cart.findIndex(item => item.productId === productId);
+  if (idx === -1) return;
+
+  if (cart[idx].qty > 1) {
+    cart[idx].qty -= 1;
+  } else {
+    cart.splice(idx, 1);
+  }
+
+  saveCart();
+  updateCartBadge();
+  updatePointsDisplay();
+  renderCartPanel();
+  applyFilters();
+}
+
+function clearCart() {
+  cart = [];
+  saveCart();
+  updateCartBadge();
+  updatePointsDisplay();
+  renderCartPanel();
+  applyFilters();
+}
+
+function renderCartPanel() {
+  const cartPanel = document.getElementById("cartPanel");
+  const cartItems = document.getElementById("cartItems");
+  const cartTotalPoints = document.getElementById("cartTotalPoints");
+  const checkoutPanel = document.getElementById("checkoutPanel");
+
+  if (!cartPanel || !cartItems || !cartTotalPoints) return;
+
+  cartItems.innerHTML = "";
+
+  if (cart.length === 0) {
+    cartItems.innerHTML = `<p class="muted">Your cart is empty.</p>`;
+    cartTotalPoints.textContent = `Total: 0 points`;
+
+    if (checkoutPanel) {
+      checkoutPanel.style.display = "none";
+    }
+
+    renderCheckoutSummary();
+    return;
+  }
+
+  cart.forEach((item) => {
+    const row = document.createElement("div");
+    row.style.display = "flex";
+    row.style.justifyContent = "space-between";
+    row.style.alignItems = "center";
+    row.style.gap = "12px";
+    row.style.padding = "10px 0";
+    row.style.borderBottom = "1px solid rgba(0,0,0,0.08)";
+
+    row.innerHTML = `
+      <div style="display:flex; align-items:center; gap:12px;">
+        <img src="${item.thumbnail}" alt="${item.title}" style="width:56px; height:56px; object-fit:contain;" />
+        <div>
+          <div><strong>${item.title}</strong></div>
+          <div class="muted small">
+            Qty: ${item.qty} • ${item.pointCost} points each (${formatDollars(item.dollarCost)})
+          </div>
+        </div>
+      </div>
+
+      <button class="btn btn-primary remove-cart-btn" type="button">Remove</button>
+    `;
+
+    const removeBtn = row.querySelector(".remove-cart-btn");
+    removeBtn.addEventListener("click", () => {
+      removeFromCart(item.productId);
+    });
+
+    cartItems.appendChild(row);
+  });
+
+  cartTotalPoints.textContent = `Items total: ${getCartPointsTotal()} points`;
+
+  if (checkoutPanel) {
+    checkoutPanel.style.display = "block";
+  }
+
+  renderCheckoutSummary();
+}
+
+function renderCheckoutSummary() {
+  const checkoutSummary = document.getElementById("checkoutSummary");
+  const confirmCheckoutBtn = document.getElementById("confirmCheckoutBtn");
+
+  if (!checkoutSummary) return;
+
+  const itemPoints = getCartPointsTotal();
+  const itemDollars = getCartDollarTotal();
+  const shippingPoints = getShippingPointCost();
+  const shippingDollars = getShippingDollarCost();
+  const totalPoints = getCheckoutPointsTotal();
+  const remainingPoints = Math.max(0, CURRENT_USER_POINTS - totalPoints);
+  const enoughPoints = totalPoints <= CURRENT_USER_POINTS;
+
+  const expectedDeliveryDate = getExpectedDeliveryDate();
+  const expectedDeliveryLabel = formatDateLong(expectedDeliveryDate);
+
+  checkoutSummary.innerHTML = `
+    <div class="muted small" style="display:grid; gap:8px;">
+      <div>Items subtotal: <strong>${itemPoints} points</strong> (${formatDollars(itemDollars)})</div>
+      <div>Shipping: <strong>${shippingPoints} points</strong> (${formatDollars(shippingDollars)})</div>
+      <div>Total checkout cost: <strong>${totalPoints} points</strong></div>
+      <div>Points after checkout: <strong>${remainingPoints}</strong></div>
+      <div>
+        Expected delivery:
+        <strong>${expectedDeliveryLabel}</strong>
+        ${selectedShipping === "overnight" ? "(3 business days)" : "(7 business days)"}
+      </div>
+      ${!enoughPoints ? `<div style="color:#b00020;"><strong>Not enough points for this checkout.</strong></div>` : ""}
+    </div>
+  `;
+
+  if (confirmCheckoutBtn) {
+    confirmCheckoutBtn.disabled = cart.length === 0 || !enoughPoints;
+  }
 }
 
 function normalizeNumber(val) {
@@ -86,7 +348,7 @@ function getFilters() {
 
 function applyFilters() {
   const { q, category, minPoints, maxPoints, affordableOnly } = getFilters();
-  const userPoints = CURRENT_USER_POINTS;
+  const userPoints = getAvailablePoints();
 
   filteredProducts = allProducts.filter((p) => {
     const title = String(p.title || "").toLowerCase();
@@ -143,6 +405,23 @@ function renderProducts() {
       const pointsCost = dollarsToPoints(product.price);
       const dollarsLabel = formatDollars(product.price);
 
+      const totalItemsInCart = getCartItemCount();
+      const availablePoints = getAvailablePoints();
+      const itemAlreadyInCart = isProductInCart(product.id);
+      const itemAffordable = pointsCost <= availablePoints;
+      const cartHasSpace = totalItemsInCart < 4;
+
+      let redeemLabel = "Redeem";
+      let redeemDisabled = false;
+
+      if (!cartHasSpace) {
+        redeemLabel = "Cart Full";
+        redeemDisabled = true;
+      } else if (!itemAffordable) {
+        redeemLabel = "Not Enough Points";
+        redeemDisabled = true;
+      }
+
       card.innerHTML = `
         <div class="card-header" style="position:relative;">
           <h3>${product.title}</h3>
@@ -161,12 +440,14 @@ function renderProducts() {
             ${String(product.description || "").substring(0, 100)}...
           </p>
 
-          <div style="margin-top:10px; display:flex; justify-content:space-between; align-items:flex-start;">
+          <div style="margin-top:10px; display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">
             <div>
               <strong>${pointsCost} points</strong>
               <div class="muted small" style="margin-top:2px;">(${dollarsLabel})</div>
             </div>
-            <button class="btn btn-primary" type="button">Redeem</button>
+            <button class="btn btn-primary redeem-btn" type="button" ${redeemDisabled ? "disabled" : ""}>
+              ${redeemLabel}
+            </button>
           </div>
 
         </div>
@@ -179,7 +460,15 @@ function renderProducts() {
           toggleFavorite(product.id);
           favBtn.style.color = isFavorited(product.id) ? "red" : "#ccc";
         });
-      } 
+      }
+
+      const redeemBtn = card.querySelector(".redeem-btn");
+      if (redeemBtn) {
+        redeemBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          addToCart(product);
+        });
+      }
 
       card.style.cursor = "pointer";
       card.addEventListener("click", () => {
@@ -296,18 +585,140 @@ document.addEventListener("DOMContentLoaded", async () => {
   const createSponsorBtn = document.getElementById("createSponsorBtn");
   const sponsorDashboardBtn = document.getElementById("sponsorDashboardBtn");
 
+  const cartBtn = document.getElementById("cartBtn");
+  const cartPanel = document.getElementById("cartPanel");
+  const clearCartBtn = document.getElementById("clearCartBtn");
+
+  const shippingSelect = document.getElementById("shippingSelect");
+  const confirmCheckoutBtn = document.getElementById("confirmCheckoutBtn");
+  const cancelCheckoutBtn = document.getElementById("cancelCheckoutBtn");
+  const checkoutPanel = document.getElementById("checkoutPanel");
+
   try {
     const me = await getJSON("/api/me");
 
+    CURRENT_USER_ID = Number(me.id || 0);
+
+    if (me.role === "Driver") {
+      loadCart();
+    }
+
     CURRENT_USER_POINTS = Number(me.points || 0);
 
-    const pointsEl =
-      document.getElementById("pointsValue") ||
-      document.getElementById("pointsBalance");
+    if (me.role === "Driver") {
+      updatePointsDisplay();
 
-    if (pointsEl && me.role === "Driver") {
-      pointsEl.textContent = `Points: ${CURRENT_USER_POINTS}`;
-      pointsEl.style.display = "inline";
+      if (cartBtn) {
+        cartBtn.style.display = "inline-block";
+        updateCartBadge();
+
+        cartBtn.addEventListener("click", () => {
+          if (!cartPanel) return;
+          cartPanel.style.display = cartPanel.style.display === "none" ? "block" : "none";
+          renderCartPanel();
+        });
+      }
+
+      if (clearCartBtn) {
+        clearCartBtn.addEventListener("click", () => {
+          clearCart();
+        });
+      }
+
+      if (shippingSelect) {
+        shippingSelect.value = selectedShipping;
+
+        shippingSelect.addEventListener("change", () => {
+          selectedShipping = shippingSelect.value;
+          updatePointsDisplay();
+          renderCheckoutSummary();
+          applyFilters();
+        });
+      }
+
+      if (cancelCheckoutBtn) {
+        cancelCheckoutBtn.addEventListener("click", () => {
+          if (checkoutPanel) {
+            checkoutPanel.style.display = "none";
+          }
+        });
+      }
+
+      if (confirmCheckoutBtn) {
+        confirmCheckoutBtn.addEventListener("click", async () => {
+          if (cart.length === 0) {
+            alert("Your cart is empty.");
+            return;
+          }
+
+          const totalPoints = getCheckoutPointsTotal();
+
+          if (totalPoints > CURRENT_USER_POINTS) {
+            alert("You do not have enough points for this checkout.");
+            return;
+          }
+
+          const shippingLabel =
+            selectedShipping === "overnight"
+              ? "Expedited Overnight (+20%)"
+              : "Standard Shipping (Free)";
+
+          const confirmed = window.confirm(
+            `Confirm checkout?\n\n` +
+            `Items: ${getCartItemCount()}\n` +
+            `Shipping: ${shippingLabel}\n` +
+            `Total: ${totalPoints} points`
+          );
+
+          if (!confirmed) return;
+
+          confirmCheckoutBtn.disabled = true;
+
+          try {
+            const res = await fetch("/api/orders/checkout", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json"
+              },
+              credentials: "same-origin",
+              body: JSON.stringify({
+                items: cart,
+                shipping_method: selectedShipping,
+                shipping_point_cost: getShippingPointCost(),
+                shipping_dollar_cost: getShippingDollarCost()
+              })
+            });
+
+            const data = await res.json();
+
+            if (!res.ok) {
+              throw new Error(data.error || "Checkout failed.");
+            }
+
+            CURRENT_USER_POINTS = Number(data.remainingPoints || 0);
+            clearCart();
+
+            if (checkoutPanel) {
+              checkoutPanel.style.display = "none";
+            }
+
+            updatePointsDisplay();
+            updateCartBadge();
+            renderCartPanel();
+            applyFilters();
+
+            alert("Order placed successfully.");
+
+          } catch (err) {
+            console.error("Checkout failed:", err);
+            alert(err.message || "Checkout failed.");
+          } finally {
+            confirmCheckoutBtn.disabled = false;
+          }
+        });
+      }
+
+      renderCartPanel();
     }
 
     const sponsorText = me.sponsor ? ` • ${me.sponsor}` : "";
