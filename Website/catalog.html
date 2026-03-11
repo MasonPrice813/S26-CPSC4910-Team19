@@ -41,6 +41,10 @@
             </div>
         </div>
 
+        <button id="cartBtn" class="btn btn-primary" type="button" style="display:none;">
+            Cart <span id="cartCount">0</span>
+        </button>
+
         <button id="profileBtn" class="btn btn-primary">Profile</button>
         <button id="logoutBtn" class="btn btn-primary">Log out</button>
 
@@ -111,6 +115,22 @@
         <div style="width:100%;">
             <p id="resultsMeta" class="muted small" style="margin:8px 0 0 0;"></p>
         </div>
+        </div>
+    </div>
+
+    <div id="cartPanel" class="content-box" style="display:none; margin-top:16px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+            <h3 style="margin:0;">Cart</h3>
+            <div class="muted small">
+                Max 4 items
+            </div>
+        </div>
+
+        <div id="cartItems" style="margin-top:14px;"></div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:16px; gap:12px; flex-wrap:wrap;">
+            <strong id="cartTotalPoints">Total: 0 points</strong>
+            <button id="clearCartBtn" class="btn btn-primary" type="button">Clear Cart</button>
         </div>
     </div>
 
