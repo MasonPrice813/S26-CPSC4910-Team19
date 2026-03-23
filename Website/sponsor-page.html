@@ -138,6 +138,46 @@
         <button id="awardAll" class="btn btn-primary"> Award Points to All Drivers</button>
         <button id="deductAll" class="btn btn-secondary"> Deduct Points from All Drivers</button>
       </div>
+
+      <div style="margin-top:18px;">
+        <h3>Recurring Points</h3>
+        <input type="number" id="recurringAmount" placeholder="Points" />
+
+        <div style="margin-top:10px;">
+          <select id="recurringInterval">
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+          </select>
+        </div>
+
+        <label style="margin-right: 15px;">
+          <input type="radio" name="targetType" value="all" checked>
+          All Drivers
+        </label>
+
+        <label>
+          <input type="radio" name="targetType" value="specific">
+          Select Drivers
+        </label>
+
+
+        <select id="driverSelect" multiple style="display:none;">
+          <!-- populate with drivers -->
+        </select>
+        <div>
+          <label for="recurringReason">Reason for points:</label>
+          <input
+            type="text"
+            id="recurringReason"
+            placeholder="Enter reason..."
+          />
+        </div>
+
+        <div style="margin-top:10px;">
+          <button id="startRecurring" class="btn btn-primary">Start Recurring</button>
+          <button id="stopRecurring" class="btn btn-secondary">Stop Recurring</button>
+        </div>
+      </div>
     </section>
 
     <!-- Applications -->

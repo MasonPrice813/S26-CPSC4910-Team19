@@ -88,9 +88,104 @@ async function loadDrivers() {
 
     tbody.appendChild(row);
   });
+
+  populateDriverDropdown(drivers);
+
 }
 
 document.addEventListener("DOMContentLoaded", loadDrivers);
+
+function populateDriverDropdown(drivers) {
+  const select = document.getElementById("driverSelect");
+  select.innerHTML = "";
+
+  drivers.forEach(driver => {
+    const option = document.createElement("option");
+    option.value = driver.driver_id;
+    option.textContent = `${driver.first_name} ${driver.last_name}`;
+
+    select.appendChild(option);
+  });
+}
+document.addEventListener("DOMContentLoaded", () => {
+  const radios = document.querySelectorAll('input[name="targetType"]');
+  const driverSelect = document.getElementById("driverSelect");
+
+  radios.forEach(radio => {
+    radio.addEventListener("change", () => {
+      if (radio.value === "specific" && radio.checked) {
+        driverSelect.style.display = "block";
+      } 
+      else {
+        driverSelect.style.display = "none";
+      }
+    });
+  });
+});
+
+document.getElementById("startRecurring").onclick = async () => {
+  const amount = parseInt(document.getElementById("recurringAmount").value);
+  const interval = document.getElementById("recurringInterval").value;
+  const targetType = document.querySelector('input[name="targetType"]:checked').value;
+  const reason = document.getElementById("recurringReason").value;
+
+  let targetIds = [];
+
+  if (targetType === "specific") {
+    targetIds = Array.from(driverSelect.selectedOptions).map(opt => opt.value);
+  }
+  if (isNaN(amount)) {
+    alert("Enter a valid number");
+    return;
+  }
+  if (!reason || reason.trim() === "") {
+    alert("Reason is required");
+    return;
+  }
+
+  await fetch('/api/recurring/start', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      amount,
+      interval,
+      targetType,
+      targetIds,
+      reason
+    })
+  });
+
+  alert("Recurring points started!");
+};
+
+document.getElementById("stopRecurring").addEventListener("click", async () => {
+  const res = await fetch("/api/recurring/active");
+  const rules = await res.json();
+
+  if (rules.length === 0) {
+    alert("No active recurring processes.");
+    return;
+  }
+
+  const options = rules.map(rule => {
+    return `ID: ${rule.id} | ${rule.points_amount} pts | ${rule.interval_type}`;
+  }).join("\n");
+
+  const selectedId = prompt(
+    `Select the ID of the recurring process to stop:\n\n${options}`
+  );
+
+  if (!selectedId) return;
+
+  await fetch("/api/recurring/stop", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: parseInt(selectedId) })
+  });
+
+  alert("Recurring process stopped.");
+});
+
 
 async function promptAndUpdate(driverId) {
   // Asking for number of points

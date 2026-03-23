@@ -1048,6 +1048,111 @@ app.get("/api/sponsor/drivers", async (req, res) => {
   }
 });
 
+app.post('/api/recurring/start', async (req, res) => {
+  const {amount, interval, targetType, targetIds, reason} = req.body;
+
+  await pool.query(
+    `INSERT INTO RecurringPoints 
+     (points_amount, interval_type, target_type, target_ids, reason, is_active)
+     VALUES (?, ?, ?, ?, ?, true)`,
+    [
+      amount,
+      interval,
+      targetType,
+      targetType === 'specific' ? JSON.stringify(targetIds) : null,
+      reason
+    ]
+  );
+
+  res.sendStatus(200);
+});
+
+app.get("/api/recurring/active", async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT id, points_amount, interval_type, target_type, target_ids
+       FROM RecurringPoints
+       WHERE is_active = true`
+    );
+
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
+app.post('/api/recurring/stop', async (req, res) => {
+  const {id} = req.body;
+
+  await pool.query(
+    `UPDATE RecurringPoints SET is_active = false WHERE id = ?`,
+    [id]
+  );
+
+  res.sendStatus(200);
+});
+
+function shouldRun(rule, now) {
+  const last = new Date(rule.last_run || 0);
+  if (rule.interval_type === 'daily') {
+    return now - last >= 24 * 60 * 60 * 1000;
+  }
+  if (rule.interval_type === 'weekly') {
+    return now - last >= 7 * 24 * 60 * 60 * 1000;
+  }
+
+  return false;
+}
+
+const cron = require('node-cron');
+
+cron.schedule('* * * * *', async () => {
+  const [rules] = await pool.query(
+    `SELECT * FROM RecurringPoints WHERE is_active = true`
+  );
+
+  const now = new Date();
+  for (const rule of rules) {
+    if (shouldRun(rule, now)) {
+      await applyPointsToDrivers(rule);
+      await pool.query(
+        `UPDATE RecurringPoints SET last_run = ? WHERE id = ?`,
+        [now, rule.id]
+      );
+    }
+  }
+});
+
+async function applyPointsToDrivers(rule) {
+  let drivers;
+  if (rule.target_type === 'all') {
+    const [rows] = await pool.query(`SELECT id FROM drivers`);
+    drivers = rows;
+  } 
+  else {
+    const ids = JSON.parse(rule.target_ids);
+    if (!ids || ids.length === 0) return;
+
+    const [rows] = await pool.query(
+      `SELECT id FROM drivers WHERE id IN (?)`,
+      [ids]
+    );
+    drivers = rows;
+  }
+
+  for (const driver of drivers) {
+    await pool.query(
+      `CALL update_driver_points(?, ?, ?)`,
+      [
+        driver.id,
+        rule.points_amount,
+        rule.reason 
+      ]
+    );
+  }
+}
+
 // ---------------- REVIEWS API ----------------
 
 // Save a review
