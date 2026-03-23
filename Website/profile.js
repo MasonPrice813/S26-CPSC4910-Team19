@@ -102,6 +102,8 @@ async function loadProfileFromSession() {
         }
 
         renderingSections();
+        loadPointHistory();
+
   } catch (err) {
     console.error(err);
     window.location.href = "/Website/login.html";
@@ -329,6 +331,40 @@ async function removeSection(id) {
     section.content = "";
     renderingSections();
     saveProfileToDB().catch(err => console.error(err));
+}
+
+async function loadPointHistory() {
+  try {
+    const history = await getJSON("/api/me/points-history");
+    const container = document.getElementById("pointsHistory");
+    container.innerHTML = "";
+
+    if (!history.length) {
+      container.innerHTML = `<p class="muted small">No point history yet.</p>`;
+      return;
+    }
+
+    history.forEach(entry => {
+      const div = document.createElement("div");
+      div.className = "history-item";
+      const sign = entry.points_change > 0 ? "+" : "";
+
+      div.innerHTML = `
+        <div><strong>${sign}${entry.points_change} points</strong></div>
+        <div class="muted small">
+          ${entry.reason || "No reason provided"}
+        </div>
+        <div class="muted small">
+          ${new Date(entry.created_at).toLocaleString()}
+        </div>
+        <hr />
+      `;
+
+      container.appendChild(div);
+    });
+  } catch (err) {
+    console.error("Failed to load history:", err);
+  }
 }
 
 

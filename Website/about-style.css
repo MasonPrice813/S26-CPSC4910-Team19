@@ -500,3 +500,13 @@ textarea{
   font-size: 12px;
   margin-left: 6px;
 }
+
+#pointsHistory {
+  max-height: 300px;      
+  overflow-y: auto;       
+  padding-right: 8px;     
+}
+
+.history-item {
+  padding: 8px 0;
+}

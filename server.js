@@ -766,6 +766,43 @@ app.delete("/api/me/profile/photo", requireLogin, async (req, res) => {
   }
 });
 
+app.get("/api/me/points-history", async (req, res) => {
+  try {
+    if (!req.session.user) {
+      return res.status(401).json({ error: "Not logged in" });
+    }
+    const userId = req.session.user.id;
+    
+    // Get driver_id from drivers table
+    const [[driver]] = await pool.query(
+      `SELECT id FROM drivers WHERE user_id = ?`,
+      [userId]
+    );
+
+    if (!driver) {
+      return res.json([]);
+    }
+
+    const [rows] = await pool.query(
+      `SELECT 
+         points_change,
+         points_before,
+         points_after,
+         reason,
+         created_at
+       FROM driver_point_history
+       WHERE driver_id = ?
+       ORDER BY created_at DESC`,
+      [driver.id]
+    );
+    res.json(rows);
+    
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
 //Admin: list/search users across all sponsors
 app.get("/api/admin/users", requireAdmin, async (req, res) => {
   const search = String(req.query.search || "").trim();
