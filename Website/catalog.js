@@ -21,6 +21,10 @@ let selectedShipping = "standard";
 let recommendedProducts = [];
 let purchasedProductIds = [];
 
+let CURRENT_USER_ROLE = null;
+let CURRENT_USER_SPONSOR = null;
+let HIDDEN_PRODUCT_IDS = new Set();
+
 const POINTS_PER_DOLLAR = 10; // 10 points = $1
 
 function dollarsToPoints(priceDollars) {
@@ -553,6 +557,8 @@ function applyFilters() {
     if (affordableOnly && pointsCost > userPoints) return false;
     if (showFavoritesOnly && !isFavorited(p.id)) return false;
 
+    if (HIDDEN_PRODUCT_IDS.has(Number(p.id))) return false;
+
     return true;
   });
 
@@ -613,9 +619,34 @@ function renderProducts() {
       card.innerHTML = `
         <div class="card-header" style="position:relative;">
           <h3>${product.title}</h3>
-          <button class="favorite-btn" 
-            style="position:absolute; top:8px; right:14px; background:none; border:none; cursor:pointer; font-size:40px; color: ${isFavorited(product.id) ? 'red' : '#ccc'};"> ♥
-          </button>
+
+          ${
+            CURRENT_USER_ROLE === "Sponsor"
+              ? `
+                <button
+                  class="remove-product-btn"
+                  title="Hide item"
+                  type="button"
+                  style="
+                    position:absolute;
+                    top:10px;
+                    right:14px;
+                    background:none;
+                    border:none;
+                    cursor:pointer;
+                    font-size:28px;
+                    font-weight:bold;
+                    color:#b00020;
+                    line-height:1;
+                  "
+                >−</button>
+              `
+              : `
+                <button class="favorite-btn"
+                  style="position:absolute; top:8px; right:14px; background:none; border:none; cursor:pointer; font-size:40px; color: ${isFavorited(product.id) ? 'red' : '#ccc'};"> ♥
+                </button>
+              `
+          }
         </div>
 
         <div style="padding:16px;">
@@ -647,6 +678,27 @@ function renderProducts() {
           e.stopPropagation(); 
           toggleFavorite(product.id);
           favBtn.style.color = isFavorited(product.id) ? "red" : "#ccc";
+        });
+      }
+
+      const removeBtn = card.querySelector(".remove-product-btn");
+      if (removeBtn) {
+        removeBtn.addEventListener("click", async (e) => {
+          e.stopPropagation();
+
+          const confirmed = confirm(
+            `Hide "${product.title}" for sponsor "${CURRENT_USER_SPONSOR}" and its users?`
+          );
+          if (!confirmed) return;
+
+          try {
+            await hideCatalogItem(product.id);
+            HIDDEN_PRODUCT_IDS.add(Number(product.id));
+            applyFilters();
+          } catch (err) {
+            console.error(err);
+            alert("Could not hide item for this sponsor.");
+          }
         });
       }
 
@@ -783,6 +835,159 @@ async function loadNotificationCount() {
   }
 }
 
+async function loadHiddenProductIds() {
+  try {
+    const data = await getJSON("/api/catalog/hidden-product-ids");
+    const ids = Array.isArray(data?.productIds) ? data.productIds.map(Number) : [];
+    HIDDEN_PRODUCT_IDS = new Set(ids);
+  } catch (err) {
+    console.error("Failed to load hidden product ids:", err);
+    HIDDEN_PRODUCT_IDS = new Set();
+  }
+}
+
+async function hideCatalogItem(productId) {
+  const res = await fetch(`/api/sponsor/catalog/hide/${productId}`, {
+    method: "POST",
+    credentials: "same-origin"
+  });
+
+  if (!res.ok) {
+    throw new Error(`Hide item failed: ${res.status}`);
+  }
+
+  return res.json();
+}
+
+async function restoreCatalogItem(productId) {
+  const res = await fetch(`/api/sponsor/catalog/restore/${productId}`, {
+    method: "POST",
+    credentials: "same-origin"
+  });
+
+  if (!res.ok) {
+    throw new Error(`Restore item failed: ${res.status}`);
+  }
+
+  return res.json();
+}
+
+async function getHiddenItems() {
+  const data = await getJSON("/api/sponsor/catalog/hidden-items");
+  return Array.isArray(data?.items) ? data.items : [];
+}
+
+async function openHiddenItemsView() {
+  try {
+    const hiddenItems = await getHiddenItems();
+
+    if (!hiddenItems.length) {
+      alert("There are no hidden items for your sponsor right now.");
+      return;
+    }
+
+    const hiddenIds = hiddenItems.map((item) => Number(item.product_id));
+    const hiddenProducts = allProducts.filter((product) =>
+      hiddenIds.includes(Number(product.id))
+    );
+
+    const overlay = document.createElement("div");
+    overlay.style.position = "fixed";
+    overlay.style.inset = "0";
+    overlay.style.background = "rgba(0, 0, 0, 0.35)";
+    overlay.style.backdropFilter = "blur(10px)";
+    overlay.style.webkitBackdropFilter = "blur(10px)";
+    overlay.style.zIndex = "9999";
+    overlay.style.display = "flex";
+    overlay.style.alignItems = "center";
+    overlay.style.justifyContent = "center";
+    overlay.style.padding = "24px";
+
+    const modal = document.createElement("div");
+    modal.className = "content-box";
+    modal.style.background = "rgba(255, 255, 255, 0.1)";
+    modal.style.backdropFilter = "blur(12px)";
+    modal.style.webkitBackdropFilter = "blur(12px)";
+    modal.style.boxShadow = "0 20px 60px rgba(0,0,0,0.25)";
+    modal.style.borderRadius = "16px";
+    modal.style.width = "100%";
+    modal.style.maxWidth = "900px";
+    modal.style.maxHeight = "80vh";
+    modal.style.overflow = "auto";
+
+    modal.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
+        <h3 style="margin:0;">Hidden Items</h3>
+        <button id="closeHiddenItemsModal" class="btn btn-secondary" type="button">Close</button>
+      </div>
+      <div class="muted small" style="margin-top:6px;">
+        Hidden for sponsor: ${CURRENT_USER_SPONSOR || "Unknown"}
+      </div>
+      <div id="hiddenItemsModalBody" style="margin-top:16px;"></div>
+    `;
+
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    const body = modal.querySelector("#hiddenItemsModalBody");
+
+    if (!hiddenProducts.length) {
+      body.innerHTML = `<p class="muted">No hidden product details could be loaded.</p>`;
+    } else {
+      hiddenProducts.forEach((product) => {
+        const row = document.createElement("div");
+        row.style.display = "flex";
+        row.style.justifyContent = "space-between";
+        row.style.alignItems = "center";
+        row.style.gap = "12px";
+        row.style.padding = "12px 0";
+        row.style.borderBottom = "1px solid rgba(0,0,0,0.08)";
+
+        row.innerHTML = `
+          <div>
+            <div><strong>${product.title}</strong></div>
+            <div class="muted small">Product ID: ${product.id}</div>
+          </div>
+          <button class="btn btn-primary restore-item-btn" data-id="${product.id}" type="button">
+            Re-add
+          </button>
+        `;
+
+        body.appendChild(row);
+      });
+
+      body.querySelectorAll(".restore-item-btn").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const productId = Number(btn.dataset.id);
+
+          try {
+            await restoreCatalogItem(productId);
+            HIDDEN_PRODUCT_IDS.delete(productId);
+            applyFilters();
+            overlay.remove();
+          } catch (err) {
+            console.error(err);
+            alert("Could not restore item for this sponsor.");
+          }
+        });
+      });
+    }
+
+    modal.querySelector("#closeHiddenItemsModal")?.addEventListener("click", () => {
+      overlay.remove();
+    });
+
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) {
+        overlay.remove();
+      }
+    });
+  } catch (err) {
+    console.error(err);
+    alert("Could not load hidden items.");
+  }
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
   const meBadge = document.getElementById("meBadge");
   const manageUsersBtn = document.getElementById("manageUsersBtn");
@@ -794,6 +999,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const pendingBtn = document.getElementById("pendingAppsBtn");
   const createSponsorBtn = document.getElementById("createSponsorBtn");
   const sponsorDashboardBtn = document.getElementById("sponsorDashboardBtn");
+  const hiddenItemsBtn = document.getElementById("hiddenItemsBtn");
 
   const cartBtn = document.getElementById("cartBtn");
   const cartPanel = document.getElementById("cartPanel");
@@ -815,6 +1021,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     const me = await getJSON("/api/me");
 
     CURRENT_USER_ID = Number(me.id || 0);
+    CURRENT_USER_ROLE = String(me.role || "");
+    CURRENT_USER_SPONSOR = me.sponsor || null;
 
     if (me.role === "Driver") {
       loadCart();
@@ -985,6 +1193,13 @@ document.addEventListener("DOMContentLoaded", async () => {
         window.location.href = "/Website/sponsor-page.html";
       });
 
+      if (hiddenItemsBtn) {
+        hiddenItemsBtn.style.display = "inline-block";
+        hiddenItemsBtn.addEventListener("click", () => {
+          openHiddenItemsView();
+        });
+      }
+
       document.addEventListener("click", () => {
         sponsorDropdown.classList.remove("show");
       });
@@ -1057,6 +1272,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   wireUpFilterUI();
 
   try {
+    await loadHiddenProductIds();
     await initCatalogData();
     await loadRecommendations();
   } catch (err) {
