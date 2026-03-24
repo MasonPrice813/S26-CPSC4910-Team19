@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Notifications</title>
+  <link rel="stylesheet" href="/Website/about-style.css" />
+</head>
+<body>
+  <div class="navbar">
+    <div>
+      <strong>Good Driver Incentive Program</strong>
+      <span class="muted" id="meBadge" style="margin-left:10px;">Loading user...</span>
+    </div>
+
+    <div class="right">
+      <button id="backToCatalogBtn" class="btn btn-primary" type="button">Catalog</button>
+      <button id="markAllReadBtn" class="btn btn-primary" type="button">Mark All Read</button>
+      <button id="profileBtn" class="btn btn-primary" type="button">Profile</button>
+      <button id="logoutBtn" class="btn btn-primary" type="button">Log out</button>
+    </div>
+  </div>
+
+  <main class="container">
+    <div class="content-box">
+      <h2 style="margin-bottom:6px;">Notifications</h2>
+      <p class="info-row" style="margin:0;">
+        Updates about your account, orders, and future activity in the app.
+      </p>
+    </div>
+
+    <div id="notificationsContainer" style="margin-top:16px;"></div>
+  </main>
+
+  <script src="/Website/notifications.js"></script>
+</body>
+</html>

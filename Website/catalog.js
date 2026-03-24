@@ -761,6 +761,28 @@ async function initCatalogData() {
   applyFilters();
 }
 
+async function loadNotificationCount() {
+  try {
+    const res = await fetch("/api/notifications/unread-count", {
+      credentials: "same-origin"
+    });
+
+    if (!res.ok) {
+      throw new Error(`Unread count failed: ${res.status}`);
+    }
+
+    const data = await res.json();
+    const count = Number(data.unreadCount || 0);
+
+    const badge = document.getElementById("notificationCount");
+    if (badge) {
+      badge.textContent = String(count);
+    }
+  } catch (err) {
+    console.error("Failed to load notification count:", err);
+  }
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
   const meBadge = document.getElementById("meBadge");
   const manageUsersBtn = document.getElementById("manageUsersBtn");
@@ -783,6 +805,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   const checkoutPanel = document.getElementById("checkoutPanel");
 
   const transactionHistoryBtn = document.getElementById("transactionHistoryBtn");
+
+  const notificationsBtn = document.getElementById("notificationsBtn");
+  const notificationCount = document.getElementById("notificationCount");
 
 
   
@@ -918,6 +943,16 @@ document.addEventListener("DOMContentLoaded", async () => {
           window.location.href = "/Website/transaction-history.html";
         });
       }
+
+      if (notificationsBtn) {
+        notificationsBtn.style.display = "inline-block";
+
+        notificationsBtn.addEventListener("click", () => {
+          window.location.href = "/Website/notifications.html";
+        });
+      }
+
+      await loadNotificationCount();
     }
 
     const sponsorText = me.sponsor ? ` • ${me.sponsor}` : "";

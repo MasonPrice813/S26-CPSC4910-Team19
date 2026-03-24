@@ -1311,6 +1311,95 @@ function getExpectedDeliveryDate(shippingMethod) {
   return toMySQLDate(addBusinessDays(new Date(), businessDays));
 }
 
+function buildNotificationSchedule(dateOrdered, expectedDeliveryDate) {
+  const orderedAt = new Date(dateOrdered);
+
+  const shippedAt = new Date(orderedAt);
+  shippedAt.setDate(shippedAt.getDate() + 1);
+
+  const deliveredAt = new Date(`${expectedDeliveryDate}T17:00:00`);
+
+  const outForDeliveryAt = new Date(deliveredAt);
+  outForDeliveryAt.setHours(outForDeliveryAt.getHours() - 3);
+
+  return {
+    shippedAt,
+    outForDeliveryAt,
+    deliveredAt
+  };
+}
+
+async function createOrderNotifications(conn, {
+  recipientUserId,
+  actorUserId = null,
+  groupId,
+  shippingMethod,
+  expectedDeliveryDate,
+  dateOrdered
+}) {
+  const { shippedAt, outForDeliveryAt, deliveredAt } =
+    buildNotificationSchedule(dateOrdered, expectedDeliveryDate);
+
+  const metadata = JSON.stringify({
+    shippingMethod,
+    expectedDeliveryDate
+  });
+
+  await conn.query(
+    `INSERT INTO notifications
+      (
+        recipient_user_id,
+        actor_user_id,
+        type,
+        category,
+        title,
+        message,
+        related_entity_type,
+        related_entity_id,
+        scheduled_for,
+        metadata_json
+      )
+     VALUES
+      (?, ?, ?, ?, ?, ?, ?, ?, ?, ?),
+      (?, ?, ?, ?, ?, ?, ?, ?, ?, ?),
+      (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      recipientUserId,
+      actorUserId,
+      "order_shipped",
+      "order",
+      "Order shipped",
+      `Your order ${groupId} has shipped.`,
+      "order_group",
+      groupId,
+      shippedAt,
+      metadata,
+
+      recipientUserId,
+      actorUserId,
+      "order_out_for_delivery",
+      "order",
+      "Out for delivery",
+      `Your order ${groupId} is out for delivery.`,
+      "order_group",
+      groupId,
+      outForDeliveryAt,
+      metadata,
+
+      recipientUserId,
+      actorUserId,
+      "order_delivered",
+      "order",
+      "Order delivered",
+      `Your order ${groupId} has been delivered.`,
+      "order_group",
+      groupId,
+      deliveredAt,
+      metadata
+    ]
+  );
+}
+
 app.post("/api/orders/checkout", requireLogin, async (req, res) => {
   const me = req.session.user;
 
@@ -1455,6 +1544,15 @@ app.post("/api/orders/checkout", requireLogin, async (req, res) => {
         `Catalog checkout (${shipping_method}, shipping ${cleanShippingPointCost} pts)`
       ]
     );
+
+    await createOrderNotifications(conn, {
+      recipientUserId: me.id,
+      actorUserId: null,
+      groupId,
+      shippingMethod: shipping_method,
+      expectedDeliveryDate,
+      dateOrdered: new Date()
+    });
 
     await conn.commit();
 
@@ -1708,6 +1806,100 @@ app.get("/api/orders/history/export", requireLogin, async (req, res) => {
   } catch (err) {
     console.error("order history export error:", err);
     return res.status(500).json({ error: "Could not export transaction history." });
+  }
+});
+
+app.get("/api/notifications", requireLogin, async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT
+         id,
+         recipient_user_id,
+         actor_user_id,
+         type,
+         category,
+         title,
+         message,
+         related_entity_type,
+         related_entity_id,
+         scheduled_for,
+         read_at,
+         created_at,
+         metadata_json
+       FROM notifications
+       WHERE recipient_user_id = ?
+         AND scheduled_for <= NOW()
+       ORDER BY scheduled_for DESC, id DESC`,
+      [req.session.user.id]
+    );
+
+    res.json(rows);
+  } catch (err) {
+    console.error("notifications error:", err);
+    res.status(500).json({ error: "Could not load notifications." });
+  }
+});
+
+app.get("/api/notifications/unread-count", requireLogin, async (req, res) => {
+  try {
+    const [[row]] = await pool.query(
+      `SELECT COUNT(*) AS unreadCount
+       FROM notifications
+       WHERE recipient_user_id = ?
+         AND read_at IS NULL
+         AND scheduled_for <= NOW()`,
+      [req.session.user.id]
+    );
+
+    res.json({ unreadCount: Number(row.unreadCount || 0) });
+  } catch (err) {
+    console.error("notification unread count error:", err);
+    res.status(500).json({ error: "Could not load unread count." });
+  }
+});
+
+app.post("/api/notifications/:id/open", requireLogin, async (req, res) => {
+  try {
+    const notificationId = Number(req.params.id);
+
+    if (!Number.isFinite(notificationId)) {
+      return res.status(400).json({ error: "Invalid notification id." });
+    }
+
+    const [result] = await pool.query(
+      `UPDATE notifications
+       SET read_at = NOW()
+       WHERE id = ?
+         AND recipient_user_id = ?
+         AND read_at IS NULL`,
+      [notificationId, req.session.user.id]
+    );
+
+    res.json({
+      ok: true,
+      updated: result.affectedRows > 0
+    });
+  } catch (err) {
+    console.error("notification open error:", err);
+    res.status(500).json({ error: "Could not update notification." });
+  }
+});
+
+app.post("/api/notifications/read-all", requireLogin, async (req, res) => {
+  try {
+    await pool.query(
+      `UPDATE notifications
+       SET read_at = NOW()
+       WHERE recipient_user_id = ?
+         AND scheduled_for <= NOW()
+         AND read_at IS NULL`,
+      [req.session.user.id]
+    );
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("notification read-all error:", err);
+    res.status(500).json({ error: "Could not mark all as read." });
   }
 });
 
