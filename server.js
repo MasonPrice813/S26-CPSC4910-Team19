@@ -1903,6 +1903,109 @@ app.post("/api/notifications/read-all", requireLogin, async (req, res) => {
   }
 });
 
+app.get("/api/catalog/hidden-product-ids", requireLogin, async (req, res) => {
+  try {
+    const me = req.session.user;
+    const sponsor = me.sponsor || null;
+
+    if (!sponsor) {
+      return res.json({ productIds: [] });
+    }
+
+    const [rows] = await pool.query(
+      `SELECT product_id
+       FROM sponsor_catalog_hidden_items
+       WHERE sponsor = ?
+         AND restored_at IS NULL
+       ORDER BY product_id ASC`,
+      [sponsor]
+    );
+
+    res.json({
+      productIds: rows.map((row) => Number(row.product_id))
+    });
+  } catch (err) {
+    console.error("hidden product ids error:", err);
+    res.status(500).json({ error: "Could not load hidden products." });
+  }
+});
+
+app.post("/api/sponsor/catalog/hide/:productId", requireSponsor, async (req, res) => {
+  try {
+    const productId = Number(req.params.productId);
+
+    if (!Number.isFinite(productId)) {
+      return res.status(400).json({ error: "Invalid product id." });
+    }
+
+    await pool.query(
+      `INSERT INTO sponsor_catalog_hidden_items
+         (sponsor, product_id, removed_by_user_id, removed_at, restored_at)
+       VALUES (?, ?, ?, NOW(), NULL)
+       ON DUPLICATE KEY UPDATE
+         removed_by_user_id = VALUES(removed_by_user_id),
+         removed_at = NOW(),
+         restored_at = NULL`,
+      [req.me.sponsor, productId, req.me.id]
+    );
+
+    res.json({ ok: true, productId });
+  } catch (err) {
+    console.error("hide catalog item error:", err);
+    res.status(500).json({ error: "Could not hide catalog item." });
+  }
+});
+
+app.get("/api/sponsor/catalog/hidden-items", requireSponsor, async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT
+         sponsor,
+         product_id,
+         removed_by_user_id,
+         removed_at
+       FROM sponsor_catalog_hidden_items
+       WHERE sponsor = ?
+         AND restored_at IS NULL
+       ORDER BY removed_at DESC`,
+      [req.me.sponsor]
+    );
+
+    res.json({ items: rows });
+  } catch (err) {
+    console.error("hidden items list error:", err);
+    res.status(500).json({ error: "Could not load hidden items." });
+  }
+});
+
+app.post("/api/sponsor/catalog/restore/:productId", requireSponsor, async (req, res) => {
+  try {
+    const productId = Number(req.params.productId);
+
+    if (!Number.isFinite(productId)) {
+      return res.status(400).json({ error: "Invalid product id." });
+    }
+
+    const [result] = await pool.query(
+      `UPDATE sponsor_catalog_hidden_items
+       SET restored_at = NOW()
+       WHERE sponsor = ?
+         AND product_id = ?
+         AND restored_at IS NULL`,
+      [req.me.sponsor, productId]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "Hidden item not found for your sponsor." });
+    }
+
+    res.json({ ok: true, productId });
+  } catch (err) {
+    console.error("restore catalog item error:", err);
+    res.status(500).json({ error: "Could not restore catalog item." });
+  }
+});
+
 //Start server
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on http://localhost:${PORT}`);
