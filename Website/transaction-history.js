@@ -1,7 +1,33 @@
+let PRODUCT_NAME_MAP = new Map();
+
 async function getJSON(url) {
     const res = await fetch(url, { credentials: "same-origin" });
     if (!res.ok) throw new Error(`${url} -> ${res.status}`);
     return res.json();
+}
+
+async function loadProductNames() {
+    try {
+        const res = await fetch("https://dummyjson.com/products?limit=0");
+        if (!res.ok) {
+        throw new Error(`Product API failed: ${res.status}`);
+        }
+
+        const data = await res.json();
+        const products = Array.isArray(data.products) ? data.products : [];
+
+        PRODUCT_NAME_MAP = new Map(
+        products.map((product) => [Number(product.id), String(product.title || "")])
+        );
+    } catch (err) {
+        console.error("Failed to load product names:", err);
+        PRODUCT_NAME_MAP = new Map();
+    }
+}
+
+function getProductName(productId) {
+    const name = PRODUCT_NAME_MAP.get(Number(productId));
+    return name && name.trim() ? name : `Product #${productId}`;
 }
 
 function formatMoney(value) {
@@ -50,15 +76,20 @@ function renderTransactions(transactions) {
         card.style.marginTop = "16px";
 
         const itemsHtml = tx.items.map((item) => {
+            const productName = getProductName(item.product_id);
+
             return `
                 <li style="padding:10px 0; border-bottom:1px solid rgba(0,0,0,0.08);">
-                    <div><strong>Product ID:</strong> ${item.product_id}</div>
+                    <div><strong>${productName}</strong></div>
+                    <div class="muted small" style="margin-top:4px;">
+                        Product ID: ${item.product_id}
+                    </div>
                     <div class="muted small" style="margin-top:4px;">
                         ${item.point_cost} points • ${formatMoney(item.dollar_cost)}
                     </div>
                 </li>
             `;
-        }).join("");
+            }).join("");
 
         card.innerHTML = `
             <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap;">
@@ -114,6 +145,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             meBadge.textContent = `Logged in as ${me.username || "Driver"}`;
         }
 
+        await loadProductNames();
         await loadTransactions();
     } catch (err) {
         console.error("Failed to load transaction history page:", err);
@@ -121,7 +153,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (container) {
             container.innerHTML = `
                 <div class="content-box">
-                <p style="margin:0;">Failed to load transaction history.</p>
+                    <p style="margin:0;">Failed to load transaction history.</p>
                 </div>
             `;
         }
@@ -129,9 +161,9 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     rangeSelect?.addEventListener("change", async () => {
         try {
-        await loadTransactions();
+            await loadTransactions();
         } catch (err) {
-        console.error(err);
+            console.error(err);
         }
     });
 
@@ -155,7 +187,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             credentials: "same-origin"
         });
         } catch (err) {
-        console.error("Logout failed:", err);
+            console.error("Logout failed:", err);
         }
 
         window.location.href = "/Website/login.html";
