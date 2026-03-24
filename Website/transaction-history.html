@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Transaction History</title>
+    <link rel="stylesheet" href="/Website/about-style.css" />
+</head>
+<body>
+    <div class="navbar">
+        <div>
+            <strong>Good Driver Incentive Program</strong>
+            <span class="muted" id="meBadge" style="margin-left:10px;">Loading user...</span>
+        </div>
+
+        <div class="right">
+            <button id="backToCatalogBtn" class="btn btn-primary" type="button">Catalog</button>
+            <button id="profileBtn" class="btn btn-primary" type="button">Profile</button>
+            <button id="logoutBtn" class="btn btn-primary" type="button">Log out</button>
+        </div>
+    </div>
+    <main class="container">
+        <div class="content-box">
+            <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:16px; flex-wrap:wrap;">
+                <div>
+                    <h2 style="margin-bottom:6px;">Transaction History</h2>
+                    <p class="info-row" style="margin:0;">
+                        View your past transactions and export them by date range.
+                    </p>
+                </div>
+
+                <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
+                    <div>
+                        <label class="muted small" for="rangeSelect">Time range</label>
+                        <select
+                        id="rangeSelect"
+                        style="width:180px; padding:10px; border-radius:10px; border:1px solid rgba(0,0,0,0.12);"
+                        >
+                        <option value="1w">Past 1 Week</option>
+                        <option value="1m" selected>Past 1 Month</option>
+                        <option value="6m">Past 6 Months</option>
+                        <option value="1y">Past 1 Year</option>
+                        <option value="all">All Time</option>
+                        </select>
+                    </div>
+
+                <button id="exportBtn" class="btn btn-primary" type="button">Export CSV</button>
+                </div>
+            </div>
+        </div>
+        <div id="transactionsContainer" style="margin-top:16px;"></div>
+    </main>
+    
+    <script src="/Website/transaction-history.js"></script>
+</body>
+</html>

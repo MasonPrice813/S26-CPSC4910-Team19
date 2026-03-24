@@ -1500,6 +1500,217 @@ app.get("/api/recommendations", requireLogin, async (req, res) => {
   }
 });
 
+function getHistoryStartDate(range) {
+  const now = new Date();
+
+  if (range === "1w") {
+    now.setDate(now.getDate() - 7);
+    return now;
+  }
+
+  if (range === "1m") {
+    now.setMonth(now.getMonth() - 1);
+    return now;
+  }
+
+  if (range === "6m") {
+    now.setMonth(now.getMonth() - 6);
+    return now;
+  }
+
+  if (range === "1y") {
+    now.setFullYear(now.getFullYear() - 1);
+    return now;
+  }
+
+  if (range === "all") {
+    return null;
+  }
+
+  return null;
+}
+
+function buildTransactionsFromOrderRows(rows) {
+  const grouped = new Map();
+
+  for (const row of rows) {
+    const groupId = row.group_id;
+
+    if (!grouped.has(groupId)) {
+      grouped.set(groupId, {
+        group_id: groupId,
+        transaction_date: row.date_ordered,
+        shipping_method: row.shipping_method,
+        expected_delivery_date: row.expected_delivery_date,
+        total_points: 0,
+        total_dollars: 0,
+        item_count: 0,
+        items: []
+      });
+    }
+
+    const tx = grouped.get(groupId);
+
+    tx.total_points += Number(row.point_cost || 0);
+    tx.total_dollars += Number(row.dollar_cost || 0);
+    tx.item_count += 1;
+
+    tx.items.push({
+      id: row.id,
+      product_id: row.product_id,
+      point_cost: Number(row.point_cost || 0),
+      dollar_cost: Number(row.dollar_cost || 0)
+    });
+  }
+
+  return Array.from(grouped.values()).sort((a, b) => {
+    return new Date(b.transaction_date) - new Date(a.transaction_date);
+  });
+}
+
+app.get("/api/orders/history", requireLogin, async (req, res) => {
+  try {
+    const me = req.session.user;
+
+    if (me.role !== "Driver") {
+      return res.status(403).json({ error: "Drivers only" });
+    }
+
+    const range = String(req.query.range || "1m");
+    const allowedRanges = new Set(["1w", "1m", "6m", "1y", "all"]);
+
+    if (!allowedRanges.has(range)) {
+      return res.status(400).json({ error: "Invalid range." });
+    }
+
+    const startDate = getHistoryStartDate(range);
+
+    let sql = `
+      SELECT
+        id,
+        group_id,
+        product_id,
+        point_cost,
+        dollar_cost,
+        date_ordered,
+        shipping_method,
+        expected_delivery_date
+      FROM orders
+      WHERE user_id = ?
+    `;
+
+    const params = [me.id];
+
+    if (startDate) {
+      sql += ` AND date_ordered >= ?`;
+      params.push(startDate);
+    }
+
+    sql += ` ORDER BY date_ordered DESC, id ASC`;
+
+    const [rows] = await pool.query(sql, params);
+    const transactions = buildTransactionsFromOrderRows(rows);
+
+    return res.json({
+      range,
+      transactions
+    });
+  } catch (err) {
+    console.error("order history error:", err);
+    return res.status(500).json({ error: "Could not load transaction history." });
+  }
+});
+
+app.get("/api/orders/history/export", requireLogin, async (req, res) => {
+  try {
+    const me = req.session.user;
+
+    if (me.role !== "Driver") {
+      return res.status(403).json({ error: "Drivers only" });
+    }
+
+    const range = String(req.query.range || "1m");
+    const allowedRanges = new Set(["1w", "1m", "6m", "1y", "all"]);
+
+    if (!allowedRanges.has(range)) {
+      return res.status(400).json({ error: "Invalid range." });
+    }
+
+    const startDate = getHistoryStartDate(range);
+
+    let sql = `
+      SELECT
+        id,
+        group_id,
+        product_id,
+        point_cost,
+        dollar_cost,
+        date_ordered,
+        shipping_method,
+        expected_delivery_date
+      FROM orders
+      WHERE user_id = ?
+    `;
+
+    const params = [me.id];
+
+    if (startDate) {
+      sql += ` AND date_ordered >= ?`;
+      params.push(startDate);
+    }
+
+    sql += ` ORDER BY date_ordered DESC, id ASC`;
+
+    const [rows] = await pool.query(sql, params);
+    const transactions = buildTransactionsFromOrderRows(rows);
+
+    const lines = [
+      [
+        "transaction_group_id",
+        "transaction_date",
+        "shipping_method",
+        "expected_delivery_date",
+        "transaction_total_points",
+        "transaction_total_dollars",
+        "transaction_item_count",
+        "order_row_id",
+        "product_id",
+        "item_point_cost",
+        "item_dollar_cost"
+      ].join(",")
+    ];
+
+    for (const tx of transactions) {
+      for (const item of tx.items) {
+        lines.push([
+          `"${tx.group_id}"`,
+          `"${new Date(tx.transaction_date).toISOString()}"`,
+          `"${tx.shipping_method}"`,
+          `"${tx.expected_delivery_date}"`,
+          tx.total_points,
+          Number(tx.total_dollars).toFixed(2),
+          tx.item_count,
+          item.id,
+          item.product_id,
+          item.point_cost,
+          Number(item.dollar_cost).toFixed(2)
+        ].join(","));
+      }
+    }
+
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="transaction-history-${range}.csv"`
+    );
+
+    return res.send(lines.join("\n"));
+  } catch (err) {
+    console.error("order history export error:", err);
+    return res.status(500).json({ error: "Could not export transaction history." });
+  }
+});
+
 //Start server
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on http://localhost:${PORT}`);

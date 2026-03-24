@@ -782,6 +782,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   const cancelCheckoutBtn = document.getElementById("cancelCheckoutBtn");
   const checkoutPanel = document.getElementById("checkoutPanel");
 
+  const transactionHistoryBtn = document.getElementById("transactionHistoryBtn");
+
 
   
   try {
@@ -909,6 +911,13 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
 
       renderCartPanel();
+
+      if (transactionHistoryBtn) {
+        transactionHistoryBtn.style.display = "inline-block";
+        transactionHistoryBtn.addEventListener("click", () => {
+          window.location.href = "/Website/transaction-history.html";
+        });
+      }
     }
 
     const sponsorText = me.sponsor ? ` • ${me.sponsor}` : "";
