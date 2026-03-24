@@ -782,6 +782,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   const cancelCheckoutBtn = document.getElementById("cancelCheckoutBtn");
   const checkoutPanel = document.getElementById("checkoutPanel");
 
+
+  
   try {
     const me = await getJSON("/api/me");
 
@@ -952,6 +954,16 @@ document.addEventListener("DOMContentLoaded", async () => {
     meBadge.textContent = "Not logged in";
     window.location.href = "/Website/login.html";
     return;
+  }
+
+  const goToCheckoutBtn = document.getElementById("goToCheckoutBtn");
+  if (goToCheckoutBtn) {
+    goToCheckoutBtn.addEventListener("click", () => {
+      if (cartPanel) cartPanel.style.display = "none";
+      if (checkoutPanel) checkoutPanel.style.display = "block";
+
+      checkoutPanel?.scrollIntoView({ behavior: "smooth" });
+    });
   }
 
   document.getElementById("profileBtn").addEventListener("click", () => {
