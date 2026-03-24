@@ -43,98 +43,43 @@
         <div class="content-box">
             <div id="results"></div>
         </div>
+        <!-- Bug Reports Section -->
         <div class="content-box">
             <h2>Bug Reports</h2>
             <p class="muted">View and manage submitted bug reports.</p>
 
             <div id="bugReportsContainer" style="margin-top:16px; display:flex; flex-direction:column; gap:16px;">
+            </div>
+        </div>
+        <div class="content-box">
+            <h2>System Services Status</h2>
+            <p class="muted">Current availability of core services.</p>
 
-                <!-- Example Bug Report Card -->
-                <div class="bug-card" style="border:1px solid #ddd; padding:16px; border-radius:8px;">
+            <div style="margin-top:16px; display:flex; flex-direction:column; gap:12px;">
 
-                    <!-- Header Row -->
-                    <div
-                        style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
-                        <div>
-                            <strong>Bug ID:</strong> <span class="bug-id">#12345</span>
-                        </div>
-
-                        <div style="display:flex; align-items:center; gap:8px;">
-                            <label for="statusSelect-12345" class="small muted">Status:</label>
-                            <select id="statusSelect-12345" class="input" style="min-width:150px;">
-                                <option value="New">New</option>
-                                <option value="Received">Received</option>
-                                <option value="In Progress">In Progress</option>
-                                <option value="Resolved">Resolved</option>
-                            </select>
-                            <button class="btn btn-primary save-status-btn">Update</button>
-                        </div>
-                    </div>
-
-                    <!-- Description Section -->
-                    <div style="margin-top:14px;">
-                        <strong>Description:</strong>
-                        <div class="bug-description muted" style="margin-top:6px;">
-                            Something isn't working
-                        </div>
-
-                        <!-- Add/Edit Description -->
-                        <textarea class="input bug-description-input" placeholder="Add or edit description..."
-                            style="margin-top:8px; width:100%; min-height:80px;"></textarea>
-                        <button class="btn btn-primary save-description-btn" style="margin-top:6px;">
-                            Save Description
-                        </button>
-                    </div>
-
-                    <!-- Comments Section -->
-                    <div style="margin-top:18px;">
-                        <strong>Comments:</strong>
-
-                        <div class="bug-comments" style="margin-top:8px; display:flex; flex-direction:column; gap:6px;">
-                            <div class="comment-box muted" style="background:#f5f5f5; padding:8px; border-radius:6px;">
-                                Example comment here.
-                            </div>
-                        </div>
-
-                        <!-- Add Comment -->
-                        <textarea class="input add-comment-input" placeholder="Add a comment..."
-                            style="margin-top:10px; width:100%; min-height:60px;"></textarea>
-                        <button class="btn btn-primary add-comment-btn" style="margin-top:6px;">
-                            Add Comment
-                        </button>
-                    </div>
-
+                <!-- Login Service -->
+                <div
+                    style="display:flex; justify-content:space-between; align-items:center; padding:14px; border:1px solid #ddd; border-radius:8px;">
+                    <strong>Login Service</strong>
+                    <span style="color:green; font-weight:bold;">Online</span>
                 </div>
-                <!-- End Bug Card -->
-                <div class="content-box">
-                    <h2>System Services Status</h2>
-                    <p class="muted">Current availability of core services.</p>
 
-                    <div style="margin-top:16px; display:flex; flex-direction:column; gap:12px;">
+                <!-- Catalog Service -->
+                <div
+                    style="display:flex; justify-content:space-between; align-items:center; padding:14px; border:1px solid #ddd; border-radius:8px;">
+                    <strong>Catalog Service</strong>
+                    <span style="color:red; font-weight:bold;">Offline</span>
+                </div>
 
-                        <!-- Login Service -->
-                        <div
-                            style="display:flex; justify-content:space-between; align-items:center; padding:14px; border:1px solid #ddd; border-radius:8px;">
-                            <strong>Login Service</strong>
-                            <span style="color:green; font-weight:bold;">Online</span>
-                        </div>
-
-                        <!-- Catalog Service -->
-                        <div
-                            style="display:flex; justify-content:space-between; align-items:center; padding:14px; border:1px solid #ddd; border-radius:8px;">
-                            <strong>Catalog Service</strong>
-                            <span style="color:red; font-weight:bold;">Offline</span>
-                        </div>
-
-                        <!-- Points Service -->
-                        <div
-                            style="display:flex; justify-content:space-between; align-items:center; padding:14px; border:1px solid #ddd; border-radius:8px;">
-                            <strong>Points Service</strong>
-                            <span style="color:green; font-weight:bold;">Online</span>
-                        </div>
-                    </div>
+                <!-- Points Service -->
+                <div
+                    style="display:flex; justify-content:space-between; align-items:center; padding:14px; border:1px solid #ddd; border-radius:8px;">
+                    <strong>Points Service</strong>
+                    <span style="color:green; font-weight:bold;">Online</span>
                 </div>
             </div>
+        </div>
+        </div>
         </div>
     </main>
 

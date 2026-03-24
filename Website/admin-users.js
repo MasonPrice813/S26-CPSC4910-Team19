@@ -84,9 +84,86 @@ async function searchUsers() {
     }
 }
 
-document.addEventListener("DOMContentLoaded", async () => {
-    await loadMe();
+function bugCardHTML(bug) {
+    return `
+    <div class="bug-card" style="border:1px solid #ddd; padding:16px; border-radius:8px;">
 
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+            <div>
+                <strong>Bug ID:</strong> <span>#${bug.id}</span><br>
+                <strong>Submitted by User ID:</strong> <span>${esc(bug.user_id)}</span>
+            </div>
+
+            <div style="display:flex; align-items:center; gap:8px;">
+                <label class="small muted">Status:</label>
+                <select class="input statusSelect" data-id="${bug.id}">
+                    ${["New","Received","In Progress","Resolved"]
+                        .map(s => `<option value="${s}" ${bug.status === s ? "selected" : ""}>${s}</option>`)
+                        .join("")}
+                </select>
+                <button class="btn btn-primary save-status-btn" data-id="${bug.id}">Update</button>
+            </div>
+        </div>
+
+        <div style="margin-top:14px;">
+            <strong>Description:</strong>
+            <div class="muted" style="margin-top:6px;">
+                ${esc(bug.description)}
+            </div>
+
+            <textarea class="input bug-description-input" data-id="${bug.id}"
+                placeholder="Edit description..."
+                style="margin-top:8px; width:100%; min-height:80px;"></textarea>
+
+            <button class="btn btn-primary save-description-btn" data-id="${bug.id}" style="margin-top:6px;">
+                Save Description
+            </button>
+        </div>
+
+        <div style="margin-top:18px;">
+            <strong>Comments:</strong>
+
+            <div style="margin-top:8px; display:flex; flex-direction:column; gap:6px;">
+                ${(bug.comments || []).map(c => `
+                    <div style="background:#f5f5f5; color:#000; padding:8px; border-radius:6px;">
+                        ${esc(c.comment)}
+                    </div>
+                `).join("")}
+            </div>
+
+            <textarea class="input add-comment-input" data-id="${bug.id}"
+                placeholder="Add a comment..."
+                style="margin-top:10px; width:100%; min-height:60px;"></textarea>
+
+            <button class="btn btn-primary add-comment-btn" data-id="${bug.id}" style="margin-top:6px;">
+                Add Comment
+            </button>
+        </div>
+
+    </div>
+    `;
+}
+
+async function loadBugReports() {
+    const container = document.getElementById("bugReportsContainer");
+    container.innerHTML = "Loading bugs...";
+
+    try {
+        const data = await getJSON("/api/bugs")
+        const bugs = data.bugs || [];
+
+        container.innerHTML =
+            bugs.map(bugCardHTML).join("") ||
+            `<p class="muted">No bug reports found.</p>`;
+    } catch (err) {
+        console.error(err);
+        container.innerHTML = `<p class="muted">Failed to load bugs.</p>`;
+    }
+}
+
+document.addEventListener("DOMContentLoaded", async () => {
+    loadMe().catch(console.warn);
+    loadBugReports().catch(console.error);
     document.getElementById("backBtn").addEventListener("click", () => {
         window.location.href = "/Website/catalog.html";
     });

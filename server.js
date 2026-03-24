@@ -327,6 +327,51 @@ app.get("/api/sponsor/applications", requireSponsor, async (req, res) => {
   }
 });
 
+// API for bug reports
+app.get("/api/bugs", async (req, res) => {
+    try {
+        const [rows] = await pool.query(`
+            SELECT 
+                b.id,
+                b.status,
+                b.description,
+                b.user_id,
+                c.id AS comment_id,
+                c.comment
+            FROM bug_reports b
+            LEFT JOIN bug_comments c ON b.id = c.bug_id
+            ORDER BY b.id;
+        `);
+
+        const bugsMap = {};
+
+        for (const row of rows) {
+            if (!bugsMap[row.id]) {
+                bugsMap[row.id] = {
+                    id: row.id,
+                    status: row.status,
+                    description: row.description,
+                    user_id: row.user_id,
+                    comments: []
+                };
+            }
+
+            if (row.comment) {
+                bugsMap[row.id].comments.push({
+                    id: row.comment_id,
+                    comment: row.comment
+                });
+            }
+        }
+
+        res.json({ bugs: Object.values(bugsMap) });
+
+    } catch (err) {
+        console.error("ERROR:", err);
+        res.status(500).json({ error: "Failed to load bugs" });
+    }
+});
+
 //API to move driver data from applications table to users and drivers table
 app.post("/api/sponsor/applications/:id/approve", requireSponsor, async (req, res) => {
   const appId = Number(req.params.id);
