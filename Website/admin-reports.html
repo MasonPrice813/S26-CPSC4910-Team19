@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Reports</title>
+  <link rel="stylesheet" href="/Website/about-style.css" />
+</head>
+
+<body>
+  <div class="navbar">
+    <div>
+      <strong>Good Driver Incentive Program</strong>
+      <span class="muted" id="meBadge" style="margin-left: 10px;">Loading user...</span>
+    </div>
+
+    <div class="right">
+      <button id="backBtn" class="btn btn-primary">Back to Catalog</button>
+      <button id="logoutBtn" class="btn btn-primary">Log out</button>
+    </div>
+  </div>
+
+  <main class="container">
+    <div class="content-box">
+      <h2>Admin Reports</h2>
+      <p class="muted">View transaction history across all sponsor organizations and drivers.</p>
+
+      <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:12px;">
+        <select id="sponsorFilter" class="input" style="min-width:220px;">
+          <option value="">All Sponsors</option>
+        </select>
+
+        <select id="driverFilter" class="input" style="min-width:220px;">
+          <option value="">All Drivers</option>
+        </select>
+      </div>
+
+      <p id="statusMsg" class="muted small" style="margin-top:10px;"></p>
+    </div>
+
+    <div class="content-box">
+      <div style="overflow-x:auto;">
+        <table class="driver-table" style="width:100%; border-collapse:collapse;">
+          <thead>
+            <tr>
+              <th style="text-align:left; padding:12px 10px; border-bottom:1px solid rgba(255,255,255,0.10);">Sponsor</th>
+              <th style="text-align:left; padding:12px 10px; border-bottom:1px solid rgba(255,255,255,0.10);">Driver</th>
+              <th style="text-align:left; padding:12px 10px; border-bottom:1px solid rgba(255,255,255,0.10);">Product</th>
+              <th style="text-align:left; padding:12px 10px; border-bottom:1px solid rgba(255,255,255,0.10);">Points</th>
+              <th style="text-align:left; padding:12px 10px; border-bottom:1px solid rgba(255,255,255,0.10);">Date</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <script src="/Website/admin-reports.js"></script>
+</body>
+</html>

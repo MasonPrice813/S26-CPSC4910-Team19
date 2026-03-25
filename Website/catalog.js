@@ -1041,6 +1041,22 @@ function wireCatalogRequestUI() {
   });
 }
 
+async function setupAdminButton() {
+  const res = await fetch('/api/me');
+  const user = await res.json();
+
+  if (user.role === 'Admin') {
+    const btn = document.getElementById('adminReportsBtn');
+    btn.style.display = 'block';
+
+    btn.onclick = () => {
+      window.location.href = '/Website/admin-reports.html';
+    };
+  }
+}
+
+setupAdminButton();
+
 document.addEventListener("DOMContentLoaded", async () => {
   const meBadge = document.getElementById("meBadge");
   const manageUsersBtn = document.getElementById("manageUsersBtn");

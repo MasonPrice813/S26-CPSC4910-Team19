@@ -116,6 +116,32 @@
       </div>
     </section>
 
+    <section class="content-box">
+      <h2>Transaction History</h2>
+
+      <div style="margin-top:12px; margin-bottom:16px;">
+        <label class="muted small" for="transactionDriverFilter">Driver</label>
+        <select id="transactionDriverFilter">
+          <option value="all">All Drivers</option>
+        </select>
+      </div>
+
+      <div style="overflow-x:auto;">
+        <table id="transactionTable" class="driver-table">
+          <thead>
+            <tr>
+              <th>Driver</th>
+              <th>Product ID</th>
+              <th>Points</th>
+              <th>Shipping</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody id="transactionTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+
     <!-- Driver Management -->
     <section class="content-box">
       <h2>Driver Management</h2>
@@ -129,9 +155,7 @@
             <th>Actions</th>
           </tr>
         </thead>
-        <tbody>
-          <!-- space for table to populate -->
-        </tbody>
+        <tbody id="driverManagementTableBody"></tbody>
       </table>
 
       <div style="margin-top:18px;">
