@@ -64,6 +64,7 @@ async function loadDrivers() {
 async function loadTransactions() {
   const sponsor = document.getElementById("sponsorFilter").value;
   const driver = document.getElementById("driverFilter").value;
+  const range = document.getElementById("rangeFilter").value;
   const tbody = document.getElementById("tableBody");
   const status = document.getElementById("statusMsg");
 
@@ -74,6 +75,7 @@ async function loadTransactions() {
     const params = new URLSearchParams();
     if (sponsor) params.append("sponsor", sponsor);
     if (driver) params.append("driver_id", driver);
+    if (range) params.append("range", range);
 
     const url = `/api/admin/transactions${params.toString() ? `?${params.toString()}` : ""}`;
     const data = await getJSON(url);
@@ -129,6 +131,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   document.getElementById("driverFilter").addEventListener("change", loadTransactions);
+  document.getElementById("rangeFilter").addEventListener("change", loadTransactions);
 
   try {
     await loadSponsors();

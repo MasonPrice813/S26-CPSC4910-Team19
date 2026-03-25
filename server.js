@@ -2182,7 +2182,14 @@ app.get('/api/sponsor/transactions', async (req, res) => {
   }
 
   const sponsor = req.session.user.sponsor;
-  const { driver_id } = req.query;
+  const { driver_id, range = "1m" } = req.query;
+
+  const allowedRanges = new Set(["1d", "1w", "1m", "6m", "1y", "all"]);
+  if (!allowedRanges.has(range)) {
+    return res.status(400).json({ error: 'Invalid range.' });
+  }
+
+  const startDate = getHistoryStartDate(range);
 
   try {
     let query = `
@@ -2205,11 +2212,15 @@ app.get('/api/sponsor/transactions', async (req, res) => {
       params.push(driver_id);
     }
 
+    if (startDate) {
+      query += ` AND o.date_ordered >= ?`;
+      params.push(startDate);
+    }
+
     query += ` ORDER BY o.date_ordered DESC`;
 
     const [rows] = await pool.query(query, params);
     res.json(rows);
-
   } catch (err) {
     console.error('sponsor transactions error:', err);
     res.status(500).json({ error: 'Server error' });
@@ -2221,7 +2232,14 @@ app.get('/api/admin/transactions', async (req, res) => {
     return res.status(403).json({ error: 'Unauthorized' });
   }
 
-  const { sponsor, driver_id } = req.query;
+  const { sponsor, driver_id, range = "1m" } = req.query;
+
+  const allowedRanges = new Set(["1d", "1w", "1m", "6m", "1y", "all"]);
+  if (!allowedRanges.has(range)) {
+    return res.status(400).json({ error: 'Invalid range.' });
+  }
+
+  const startDate = getHistoryStartDate(range);
 
   try {
     let query = `
@@ -2248,11 +2266,15 @@ app.get('/api/admin/transactions', async (req, res) => {
       params.push(driver_id);
     }
 
+    if (startDate) {
+      query += ` AND o.date_ordered >= ?`;
+      params.push(startDate);
+    }
+
     query += ` ORDER BY o.date_ordered DESC`;
 
     const [rows] = await pool.query(query, params);
     res.json(rows);
-
   } catch (err) {
     console.error('admin transactions error:', err);
     res.status(500).json({ error: 'Server error' });
@@ -2356,6 +2378,41 @@ app.post("/api/sponsor/settings", requireSponsor, async (req, res) => {
     res.status(500).json({ error: "Database error" });
   }
 });
+
+function getHistoryStartDate(range) {
+  const now = new Date();
+
+  if (range === "1d") {
+    now.setDate(now.getDate() - 1);
+    return now;
+  }
+
+  if (range === "1w") {
+    now.setDate(now.getDate() - 7);
+    return now;
+  }
+
+  if (range === "1m") {
+    now.setMonth(now.getMonth() - 1);
+    return now;
+  }
+
+  if (range === "6m") {
+    now.setMonth(now.getMonth() - 6);
+    return now;
+  }
+
+  if (range === "1y") {
+    now.setFullYear(now.getFullYear() - 1);
+    return now;
+  }
+
+  if (range === "all") {
+    return null;
+  }
+
+  return null;
+}
 
 //Start server
 app.listen(PORT, "0.0.0.0", () => {

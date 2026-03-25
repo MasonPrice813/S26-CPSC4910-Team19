@@ -12,6 +12,8 @@ const criteriaTextarea = document.getElementById("pointsCriteria");
 const allowNegativeSelect = document.getElementById("allowNegative");
 const saveCriteriaBtn = document.getElementById("saveSettingsBtn");
 
+const transactionRangeFilter = document.getElementById("transactionRangeFilter");
+
 function formatDateTime(value) {
   if (!value) return "—";
   return new Date(value).toLocaleString("en-US", {
@@ -191,11 +193,19 @@ async function loadTransactions() {
 
   try {
     const selectedDriverId = transactionDriverFilter?.value || "all";
+    const selectedRange = transactionRangeFilter?.value || "1m";
 
-    let url = "/api/sponsor/transactions";
+    const params = new URLSearchParams();
+
     if (selectedDriverId !== "all") {
-      url += `?driver_id=${encodeURIComponent(selectedDriverId)}`;
+      params.append("driver_id", selectedDriverId);
     }
+
+    if (selectedRange) {
+      params.append("range", selectedRange);
+    }
+
+    const url = `/api/sponsor/transactions${params.toString() ? `?${params.toString()}` : ""}`;
 
     const response = await fetch(url);
     if (!response.ok) throw new Error("Failed to load transactions");
@@ -488,6 +498,7 @@ async function updateDriverPoints(driverId, amount, reason, refreshAfter = true)
 timeViewSelect?.addEventListener("change", renderChart);
 driverFilterSelect?.addEventListener("change", renderChart);
 transactionDriverFilter?.addEventListener("change", loadTransactions);
+transactionRangeFilter?.addEventListener("change", loadTransactions);
 
 document.addEventListener("DOMContentLoaded", async () => {
   await loadDrivers();
