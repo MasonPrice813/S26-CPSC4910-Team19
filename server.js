@@ -2006,6 +2006,146 @@ app.post("/api/sponsor/catalog/restore/:productId", requireSponsor, async (req, 
   }
 });
 
+async function notifySponsorUsersForCatalogRequest(conn, {
+  sponsor,
+  requesterUserId,
+  requestId,
+  requestText
+}) {
+  const [sponsorRows] = await conn.query(
+    `SELECT id
+     FROM users
+     WHERE role = 'Sponsor'
+       AND sponsor = ?`,
+    [sponsor]
+  );
+
+  if (!sponsorRows.length) {
+    return;
+  }
+
+  const shortText =
+    String(requestText || "").trim().length > 120
+      ? `${String(requestText).trim().slice(0, 120)}...`
+      : String(requestText || "").trim();
+
+  for (const sponsorUser of sponsorRows) {
+    await conn.query(
+      `INSERT INTO notifications
+        (
+          recipient_user_id,
+          actor_user_id,
+          type,
+          category,
+          title,
+          message,
+          related_entity_type,
+          related_entity_id,
+          scheduled_for,
+          metadata_json
+        )
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)`,
+      [
+        sponsorUser.id,
+        requesterUserId,
+        "catalog_item_request",
+        "catalog_request",
+        "New catalog item request",
+        `A driver requested that this item be added to the catalog: "${shortText}"`,
+        "catalog_item_request",
+        String(requestId),
+        JSON.stringify({
+          requestId,
+          sponsor,
+          requestText
+        })
+      ]
+    );
+  }
+}
+
+app.post("/api/catalog/item-requests", requireLogin, async (req, res) => {
+  const me = req.session.user;
+  const requestText = String(req.body?.requestText || "").trim();
+
+  if (me.role !== "Driver") {
+    return res.status(403).json({ error: "Drivers only." });
+  }
+
+  if (!me.sponsor) {
+    return res.status(400).json({ error: "Your account is not associated with a sponsor." });
+  }
+
+  if (!requestText) {
+    return res.status(400).json({ error: "Request text is required." });
+  }
+
+  if (requestText.length > 500) {
+    return res.status(400).json({ error: "Request must be 500 characters or fewer." });
+  }
+
+  const conn = await pool.getConnection();
+
+  try {
+    await conn.beginTransaction();
+
+    const [result] = await conn.query(
+      `INSERT INTO catalog_item_requests
+         (requester_user_id, sponsor, request_text, status, created_at)
+       VALUES (?, ?, ?, 'pending', NOW())`,
+      [me.id, me.sponsor, requestText]
+    );
+
+    const requestId = result.insertId;
+
+    await notifySponsorUsersForCatalogRequest(conn, {
+      sponsor: me.sponsor,
+      requesterUserId: me.id,
+      requestId,
+      requestText
+    });
+
+    await conn.commit();
+
+    res.status(201).json({
+      ok: true,
+      requestId
+    });
+  } catch (err) {
+    await conn.rollback();
+    console.error("catalog item request error:", err);
+    res.status(500).json({ error: "Could not submit item request." });
+  } finally {
+    conn.release();
+  }
+});
+
+app.delete("/api/notifications/:id", requireLogin, async (req, res) => {
+  try {
+    const notificationId = Number(req.params.id);
+
+    if (!Number.isFinite(notificationId)) {
+      return res.status(400).json({ error: "Invalid notification id." });
+    }
+
+    const [result] = await pool.query(
+      `DELETE FROM notifications
+       WHERE id = ?
+         AND recipient_user_id = ?`,
+      [notificationId, req.session.user.id]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "Notification not found." });
+    }
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("delete notification error:", err);
+    res.status(500).json({ error: "Could not delete notification." });
+  }
+});
+
 //Start server
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on http://localhost:${PORT}`);

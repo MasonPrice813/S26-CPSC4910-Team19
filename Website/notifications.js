@@ -25,6 +25,8 @@ function prettyType(type) {
       return "Out for Delivery";
     case "order_delivered":
       return "Delivered";
+    case "catalog_item_request":
+      return "Catalog Item Request";
     default:
       return type.replaceAll("_", " ");
   }
@@ -38,6 +40,19 @@ async function markNotificationOpened(notificationId) {
 
   if (!res.ok) {
     throw new Error(`Open notification failed: ${res.status}`);
+  }
+
+  return res.json();
+}
+
+async function clearNotification(notificationId) {
+  const res = await fetch(`/api/notifications/${notificationId}`, {
+    method: "DELETE",
+    credentials: "same-origin"
+  });
+
+  if (!res.ok) {
+    throw new Error(`Clear notification failed: ${res.status}`);
   }
 
   return res.json();
@@ -62,30 +77,68 @@ function renderNotifications(notifications) {
     const card = document.createElement("button");
     card.type = "button";
     card.className = "content-box";
-    card.style.marginTop = "16px";
     card.style.width = "100%";
+    card.style.display = "block";
     card.style.textAlign = "left";
+    card.style.marginTop = "16px";
+    card.style.padding = "32px 40px";
     card.style.cursor = "pointer";
-    card.style.borderLeft = n.read_at ? "4px solid #ccc" : "4px solid #2f6fed";
-    card.style.background = "#fff";
+    card.style.background = "linear-gradient(135deg, rgba(30,30,50,0.85), rgba(20,40,70,0.85))";
+    card.style.backdropFilter = "blur(12px)";
+    card.style.webkitBackdropFilter = "blur(12px)";
+    card.style.color = "#fff";
+    card.style.border = "1px solid rgba(255,255,255,0.1)";
+    card.style.boxShadow = "0 10px 30px rgba(0,0,0,0.4)";
+    card.style.borderRadius = "16px";
+
 
     card.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
         <div>
-          <h3 style="margin:0 0 6px 0;">${n.title}</h3>
-          <div class="muted small">
+          <h3 style="margin:0 0 6px 0; color:#fff;">${n.title}</h3>
+          <div class="muted small" style="color: rgba(255,255,255,0.7);">
             ${prettyType(n.type)}
             ${n.related_entity_id ? `• Ref ${n.related_entity_id}` : ""}
           </div>
         </div>
 
-        <div class="muted small">${n.read_at ? "Read" : "Unread"}</div>
+        <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+          <div class="muted small" style="color: rgba(255,255,255,0.7);">
+            ${n.read_at ? "Read" : "Unread"}
+          </div>
+
+          <button
+            class="clear-notification-btn btn btn-primary"
+            type="button"
+            data-id="${n.id}"
+            style="padding:8px 16px;"
+          >
+            Clear
+          </button>
+        </div>
       </div>
 
-      <p style="margin:14px 0 8px 0;">${n.message}</p>
+      <p style="margin:14px 0 8px 0; color:rgba(255,255,255,0.9);">${n.message}</p>
 
-      <div class="muted small">Available: ${formatDateTime(n.scheduled_for)}</div>
+      <div class="muted small" style="color: rgba(255,255,255,0.7);">
+        Available: ${formatDateTime(n.scheduled_for)}
+      </div>
     `;
+
+    const clearBtn = card.querySelector(".clear-notification-btn");
+    if (clearBtn) {
+      clearBtn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+
+        try {
+          await clearNotification(n.id);
+          await loadNotifications();
+        } catch (err) {
+          console.error(err);
+          alert("Could not clear notification.");
+        }
+      });
+    }
 
     card.addEventListener("click", async () => {
       try {
