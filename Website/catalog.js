@@ -988,6 +988,59 @@ async function openHiddenItemsView() {
   }
 }
 
+async function submitCatalogItemRequest(requestText) {
+  const res = await fetch("/api/catalog/item-requests", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    credentials: "same-origin",
+    body: JSON.stringify({ requestText })
+  });
+
+  const data = await res.json();
+
+  if (!res.ok) {
+    throw new Error(data.error || `Request failed: ${res.status}`);
+  }
+
+  return data;
+}
+
+function wireCatalogRequestUI() {
+  const section = document.getElementById("catalogRequestSection");
+  const input = document.getElementById("catalogRequestInput");
+  const submitBtn = document.getElementById("submitCatalogRequestBtn");
+  const status = document.getElementById("catalogRequestStatus");
+
+  if (!section || !input || !submitBtn || !status) return;
+
+  section.style.display = "block";
+
+  submitBtn.addEventListener("click", async () => {
+    const text = String(input.value || "").trim();
+
+    if (!text) {
+      status.textContent = "Please enter an item request first.";
+      return;
+    }
+
+    submitBtn.disabled = true;
+    status.textContent = "Submitting request...";
+
+    try {
+      await submitCatalogItemRequest(text);
+      input.value = "";
+      status.textContent = "Request submitted to your sponsor.";
+    } catch (err) {
+      console.error(err);
+      status.textContent = err.message || "Could not submit request.";
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
   const meBadge = document.getElementById("meBadge");
   const manageUsersBtn = document.getElementById("manageUsersBtn");
@@ -1023,6 +1076,16 @@ document.addEventListener("DOMContentLoaded", async () => {
     CURRENT_USER_ID = Number(me.id || 0);
     CURRENT_USER_ROLE = String(me.role || "");
     CURRENT_USER_SPONSOR = me.sponsor || null;
+
+    if (notificationsBtn) {
+      notificationsBtn.style.display = "inline-block";
+
+      notificationsBtn.addEventListener("click", () => {
+        window.location.href = "/Website/notifications.html";
+      });
+    }
+
+    await loadNotificationCount();
 
     if (me.role === "Driver") {
       loadCart();
@@ -1152,15 +1215,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         });
       }
 
-      if (notificationsBtn) {
-        notificationsBtn.style.display = "inline-block";
-
-        notificationsBtn.addEventListener("click", () => {
-          window.location.href = "/Website/notifications.html";
-        });
-      }
-
-      await loadNotificationCount();
+      wireCatalogRequestUI();
     }
 
     const sponsorText = me.sponsor ? ` • ${me.sponsor}` : "";

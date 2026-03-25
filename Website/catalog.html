@@ -130,6 +130,28 @@
         </div>
     </div>
 
+    <div id="catalogRequestSection" class="content-box" style="display:none; margin-top:16px;">
+        <h3 style="margin:0 0 8px 0;">Request an Item</h3>
+        <p class="muted small" style="margin:0 0 12px 0;">
+            Don't see something you want? Send a request to your sponsor.
+        </p>
+
+        <textarea
+            id="catalogRequestInput"
+            rows="4"
+            maxlength="500"
+            placeholder="Type the item you would like added to the catalog..."
+            style="width:100%; padding:12px; border-radius:12px; border:1px solid rgba(0,0,0,0.12); resize:vertical;"
+        ></textarea>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:12px; flex-wrap:wrap;">
+            <span id="catalogRequestStatus" class="muted small"></span>
+            <button id="submitCatalogRequestBtn" class="btn btn-primary" type="button">
+                Submit Request
+            </button>
+        </div>
+    </div>
+
     <div id="recommendedSection" class="content-box" style="display:none; margin-top:16px;">
         <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
             <div>
