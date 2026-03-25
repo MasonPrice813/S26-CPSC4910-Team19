@@ -1080,13 +1080,42 @@ app.post("/api/points/update", async (req, res) => {
   try {
     const { driverId, amount, reason } = req.body;
 
-    if (!driverId || !amount) {
+    if (!driverId || amount === undefined) {
       return res.status(400).json({ error: "Missing data" });
     }
 
-    // Using stored procedure call so it goes to the history table
+    const [[driver]] = await pool.query(
+      `SELECT d.id, d.points, u.sponsor
+       FROM drivers d
+       JOIN users u ON d.user_id = u.id
+       WHERE d.id = ?
+       LIMIT 1`,
+      [driverId]
+    );
+
+    if (!driver) {
+      return res.status(404).json({ error: "Driver not found" });
+    }
+
+    const [[settings]] = await pool.query(
+      `SELECT allow_negative
+       FROM sponsor_settings
+       WHERE sponsor = ?
+       LIMIT 1`,
+      [driver.sponsor]
+    );
+
+    const allowNegative = settings ? !!settings.allow_negative : false;
+    const newPoints = Number(driver.points || 0) + Number(amount);
+
+    if (!allowNegative && newPoints < 0) {
+      return res.status(400).json({
+        error: "This sponsor does not allow negative point balances."
+      });
+    }
+
     await pool.query(
-      "CALL update_driver_points(?, ?, ?)",
+      `CALL update_driver_points(?, ?, ?)`,
       [driverId, amount, reason || "Sponsor Adjustment"]
     );
 
@@ -1100,26 +1129,27 @@ app.post("/api/points/update", async (req, res) => {
 
 app.get("/api/sponsor/drivers", async (req, res) => {
   try {
-    // Check that the user is logged in
     if (!req.session.user) {
       return res.status(401).json({ error: "Not logged in" });
     }
 
-    // Need sponsor ID to find driver's under same sponsor
     const sponsorId = req.session.user.id;
 
     const [rows] = await pool.query(`
       SELECT 
         drivers.id AS driver_id,
+        users.id AS user_id,
         users.first_name,
         users.last_name,
         users.email,
+        users.sponsor,
         drivers.points
       FROM drivers
       JOIN users ON drivers.user_id = users.id
       JOIN users AS sponsorUser ON sponsorUser.sponsor = users.sponsor
       WHERE sponsorUser.id = ?
-      AND users.role = 'Driver'
+        AND users.role = 'Driver'
+      ORDER BY users.last_name ASC, users.first_name ASC
     `, [sponsorId]);
 
     res.json(rows);
@@ -2145,6 +2175,244 @@ app.delete("/api/notifications/:id", requireLogin, async (req, res) => {
     res.status(500).json({ error: "Could not delete notification." });
   }
 });
+
+app.get('/api/sponsor/transactions', async (req, res) => {
+  if (!req.session.user || req.session.user.role !== 'Sponsor') {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+
+  const sponsor = req.session.user.sponsor;
+  const { driver_id, range = "1m" } = req.query;
+
+  const allowedRanges = new Set(["1d", "1w", "1m", "6m", "1y", "all"]);
+  if (!allowedRanges.has(range)) {
+    return res.status(400).json({ error: 'Invalid range.' });
+  }
+
+  const startDate = getHistoryStartDate(range);
+
+  try {
+    let query = `
+      SELECT
+        o.*,
+        u.id AS user_id,
+        u.first_name,
+        u.last_name,
+        u.sponsor
+      FROM orders o
+      JOIN users u ON o.user_id = u.id
+      WHERE u.sponsor = ?
+        AND u.role = 'Driver'
+    `;
+
+    const params = [sponsor];
+
+    if (driver_id) {
+      query += ` AND u.id = ?`;
+      params.push(driver_id);
+    }
+
+    if (startDate) {
+      query += ` AND o.date_ordered >= ?`;
+      params.push(startDate);
+    }
+
+    query += ` ORDER BY o.date_ordered DESC`;
+
+    const [rows] = await pool.query(query, params);
+    res.json(rows);
+  } catch (err) {
+    console.error('sponsor transactions error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/admin/transactions', async (req, res) => {
+  if (!req.session.user || req.session.user.role !== 'Admin') {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+
+  const { sponsor, driver_id, range = "1m" } = req.query;
+
+  const allowedRanges = new Set(["1d", "1w", "1m", "6m", "1y", "all"]);
+  if (!allowedRanges.has(range)) {
+    return res.status(400).json({ error: 'Invalid range.' });
+  }
+
+  const startDate = getHistoryStartDate(range);
+
+  try {
+    let query = `
+      SELECT
+        o.*,
+        u.id AS user_id,
+        u.first_name,
+        u.last_name,
+        u.sponsor
+      FROM orders o
+      JOIN users u ON o.user_id = u.id
+      WHERE u.role = 'Driver'
+    `;
+
+    const params = [];
+
+    if (sponsor) {
+      query += ` AND u.sponsor = ?`;
+      params.push(sponsor);
+    }
+
+    if (driver_id) {
+      query += ` AND u.id = ?`;
+      params.push(driver_id);
+    }
+
+    if (startDate) {
+      query += ` AND o.date_ordered >= ?`;
+      params.push(startDate);
+    }
+
+    query += ` ORDER BY o.date_ordered DESC`;
+
+    const [rows] = await pool.query(query, params);
+    res.json(rows);
+  } catch (err) {
+    console.error('admin transactions error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/admin/sponsors', async (req, res) => {
+  if (!req.session.user || req.session.user.role !== 'Admin') {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+
+  try {
+    const [rows] = await pool.query(`
+      SELECT DISTINCT sponsor
+      FROM users
+      WHERE sponsor IS NOT NULL
+        AND sponsor <> ''
+      ORDER BY sponsor ASC
+    `);
+
+    res.json(rows);
+  } catch (err) {
+    console.error('admin sponsors error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/admin/drivers', async (req, res) => {
+  if (!req.session.user || req.session.user.role !== 'Admin') {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+
+  const { sponsor } = req.query;
+
+  try {
+    let query = `
+      SELECT id AS user_id, first_name, last_name, sponsor
+      FROM users
+      WHERE role = 'Driver'
+    `;
+    const params = [];
+
+    if (sponsor) {
+      query += ` AND sponsor = ?`;
+      params.push(sponsor);
+    }
+
+    query += ` ORDER BY last_name ASC, first_name ASC`;
+
+    const [rows] = await pool.query(query, params);
+    res.json(rows);
+  } catch (err) {
+    console.error('admin drivers error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+app.get("/api/sponsor/settings", requireSponsor, async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT points_criteria, allow_negative
+       FROM sponsor_settings
+       WHERE sponsor = ?
+       LIMIT 1`,
+      [req.me.sponsor]
+    );
+
+    if (!rows.length) {
+      return res.json({
+        pointsCriteria: "",
+        allowNegative: false
+      });
+    }
+
+    res.json({
+      pointsCriteria: rows[0].points_criteria || "",
+      allowNegative: !!rows[0].allow_negative
+    });
+  } catch (err) {
+    console.error("sponsor settings load error:", err);
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
+app.post("/api/sponsor/settings", requireSponsor, async (req, res) => {
+  try {
+    const pointsCriteria = String(req.body?.pointsCriteria || "");
+    const allowNegative = !!req.body?.allowNegative;
+
+    await pool.query(
+      `INSERT INTO sponsor_settings (sponsor, points_criteria, allow_negative)
+       VALUES (?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         points_criteria = VALUES(points_criteria),
+         allow_negative = VALUES(allow_negative)`,
+      [req.me.sponsor, pointsCriteria, allowNegative]
+    );
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("sponsor settings save error:", err);
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
+function getHistoryStartDate(range) {
+  const now = new Date();
+
+  if (range === "1d") {
+    now.setDate(now.getDate() - 1);
+    return now;
+  }
+
+  if (range === "1w") {
+    now.setDate(now.getDate() - 7);
+    return now;
+  }
+
+  if (range === "1m") {
+    now.setMonth(now.getMonth() - 1);
+    return now;
+  }
+
+  if (range === "6m") {
+    now.setMonth(now.getMonth() - 6);
+    return now;
+  }
+
+  if (range === "1y") {
+    now.setFullYear(now.getFullYear() - 1);
+    return now;
+  }
+
+  if (range === "all") {
+    return null;
+  }
+
+  return null;
+}
 
 //Start server
 app.listen(PORT, "0.0.0.0", () => {
