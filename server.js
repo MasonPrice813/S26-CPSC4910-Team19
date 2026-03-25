@@ -461,9 +461,22 @@ app.post("/api/sponsor/applications/:id/reject", requireSponsor, async (req, res
   }
 });
 
+async function logLoginAttempt(username, status) {
+  try {
+    await pool.query(
+      `INSERT INTO login_attempts (username, status)
+       VALUES (?, ?)`,
+      [String(username || "").trim(), status]
+    );
+  } catch (err) {
+    console.error("login attempt logging error:", err);
+  }
+}
+
 // ----------------- AUTH: LOGIN -----------------
 app.post("/api/auth/login", async (req, res) => {
   const { username, password } = req.body || {};
+
   if (!username || !password) {
     return res.status(400).json({ message: "Username and password are required." });
   }
@@ -478,6 +491,7 @@ app.post("/api/auth/login", async (req, res) => {
     );
 
     if (rows.length === 0) {
+      await logLoginAttempt(username, "FAILURE");
       return res.status(401).json({ message: "Invalid username or password." });
     }
 
@@ -486,20 +500,18 @@ app.post("/api/auth/login", async (req, res) => {
 
     let valid = false;
 
-    // If bcrypt hash
     if (stored.startsWith("$2a$") || stored.startsWith("$2b$") || stored.startsWith("$2y$")) {
       valid = await bcrypt.compare(password, stored);
     } else {
-      // Plaintext fallback (temporary compatibility)
       valid = password === stored;
     }
 
     if (!valid) {
+      await logLoginAttempt(username, "FAILURE");
       return res.status(401).json({ message: "Invalid username or password." });
     }
 
-    // Auto-upgrade plaintext passwords to bcrypt
-    if (!(stored.startsWith("$2a$") || stored.startsWith("$2b$") || stored.startsWith("$2y$"))) {
+    if (!stored.startsWith("$2a$") && !stored.startsWith("$2b$") && !stored.startsWith("$2y$")) {
       const newHash = await bcrypt.hash(password, 12);
       await pool.query(
         `UPDATE users SET password = ? WHERE id = ?`,
@@ -513,6 +525,8 @@ app.post("/api/auth/login", async (req, res) => {
       role: user.role,
       sponsor: user.sponsor || null
     };
+
+    await logLoginAttempt(username, "SUCCESS");
 
     return res.json({
       ok: true,
