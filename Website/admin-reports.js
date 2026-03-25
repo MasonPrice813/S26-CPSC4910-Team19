@@ -98,6 +98,7 @@ async function loadTransactions() {
         <td style="padding:12px 10px; border-bottom:1px solid rgba(255,255,255,0.10);">${esc(t.first_name)} ${esc(t.last_name)}</td>
         <td style="padding:12px 10px; border-bottom:1px solid rgba(255,255,255,0.10);">${esc(t.product_id)}</td>
         <td style="padding:12px 10px; border-bottom:1px solid rgba(255,255,255,0.10);">${esc(t.point_cost)}</td>
+        <td style="padding:12px 10px; border-bottom:1px solid rgba(255,255,255,0.10);">$${t.dollar_cost ? Number(t.dollar_cost).toFixed(2) : "—"}</td>
         <td style="padding:12px 10px; border-bottom:1px solid rgba(255,255,255,0.10);">${new Date(t.date_ordered).toLocaleDateString()}</td>
       `;
       tbody.appendChild(row);

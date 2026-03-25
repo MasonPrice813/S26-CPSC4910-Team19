@@ -232,6 +232,7 @@ async function loadTransactions() {
         <td>${tx.first_name || ""} ${tx.last_name || ""}</td>
         <td>${tx.product_id || "—"}</td>
         <td>${tx.point_cost ?? "—"}</td>
+        <td>$${tx.dollar_cost ? Number(tx.dollar_cost).toFixed(2) : "—"}</td>
         <td>${tx.shipping_method || "—"}</td>
         <td>${formatDateOnly(tx.date_ordered)}</td>
       `;
