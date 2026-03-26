@@ -558,6 +558,121 @@ async function updateDriverPoints(driverId, amount, reason, refreshAfter = true)
   }
 }
 
+async function approveApplication(applicationId) {
+  try {
+    const response = await fetch(`/api/sponsor/applications/${applicationId}/approve`, {
+      method: "POST"
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      alert(errorData.error || "Failed to approve application.");
+      return;
+    }
+
+    await loadApplications();
+    await loadDrivers();
+    await loadDashboardSummary();
+    await renderChart();
+  } catch (err) {
+    console.error("Approve application error:", err);
+    alert("Failed to approve application.");
+  }
+}
+
+async function rejectApplication(applicationId) {
+  try {
+    const response = await fetch(`/api/sponsor/applications/${applicationId}/reject`, {
+      method: "POST"
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      alert(errorData.error || "Failed to reject application.");
+      return;
+    }
+
+    await loadApplications();
+    await loadDashboardSummary();
+  } catch (err) {
+    console.error("Reject application error:", err);
+    alert("Failed to reject application.");
+  }
+}
+
+function buildApplicationViewMessage(app) {
+  return [
+    `Name: ${app.first_name || ""} ${app.last_name || ""}`.trim(),
+    `Email: ${app.email || "—"}`,
+    `Phone: ${app.phone_number || "—"}`,
+    `Sponsor: ${app.sponsor || "—"}`,
+    `Username: ${app.username || "—"}`,
+    `Age: ${app.age || "—"}`,
+    `DOB: ${app.dob ? formatDateOnly(app.dob) : "—"}`,
+    `SSN Last 4: ${app.ssn_last4 || "—"}`,
+    `Driver License #: ${app.dl_num || "—"}`,
+    `DL Expiration: ${app.dl_expiration ? formatDateOnly(app.dl_expiration) : "—"}`,
+    `Driving Record: ${app.driving_record || "—"}`,
+    `Criminal History: ${app.criminal_history || "—"}`
+  ].join("\n");
+}
+
+async function loadApplications() {
+  const tbody = document.getElementById("applicationsTableBody");
+  if (!tbody) return;
+
+  try {
+    const response = await fetch("/api/sponsor/applications");
+    if (!response.ok) throw new Error("Failed to load applications");
+
+    const data = await response.json();
+    const applications = Array.isArray(data.applications) ? data.applications : [];
+
+    tbody.innerHTML = "";
+
+    if (!applications.length) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="4">No pending applications</td>
+        </tr>
+      `;
+      return;
+    }
+
+    applications.forEach(app => {
+      const row = document.createElement("tr");
+
+      row.innerHTML = `
+        <td>${app.first_name || ""} ${app.last_name || ""}</td>
+        <td>${app.email || "—"}</td>
+        <td>${formatDateOnly(app.created_at)}</td>
+        <td>
+          <div class="application-actions">
+            <button class="btn btn-primary approve-app-btn">Approve</button>
+            <button class="btn btn-secondary reject-app-btn">Reject</button>
+            <button class="btn btn-secondary view-app-btn">View</button>
+          </div>
+        </td>
+      `;
+
+      row.querySelector(".approve-app-btn").onclick = () => approveApplication(app.id);
+      row.querySelector(".reject-app-btn").onclick = () => rejectApplication(app.id);
+      row.querySelector(".view-app-btn").onclick = () => {
+        alert(buildApplicationViewMessage(app));
+      };
+
+      tbody.appendChild(row);
+    });
+  } catch (err) {
+    console.error("Error loading applications:", err);
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="4">Unable to load applications</td>
+      </tr>
+    `;
+  }
+}
+
 timeViewSelect?.addEventListener("change", renderChart);
 driverFilterSelect?.addEventListener("change", renderChart);
 transactionDriverFilter?.addEventListener("change", loadTransactions);
@@ -566,6 +681,7 @@ transactionRangeFilter?.addEventListener("change", loadTransactions);
 document.addEventListener("DOMContentLoaded", async () => {
   await loadDashboardSummary();
   await loadDrivers();
+  await loadApplications();
   await renderChart();
   await loadSponsorSettings();
   await loadTransactions();
