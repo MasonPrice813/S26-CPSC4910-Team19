@@ -2428,6 +2428,49 @@ function getHistoryStartDate(range) {
   return null;
 }
 
+app.get("/api/sponsor/dashboard-summary", requireSponsor, async (req, res) => {
+  try {
+    const sponsor = req.me.sponsor;
+
+    if (!sponsor) {
+      return res.status(400).json({ error: "Sponsor account is missing sponsor organization." });
+    }
+
+    const [[driverStats]] = await pool.query(
+      `
+      SELECT
+        COUNT(*) AS activeDrivers,
+        COALESCE(SUM(d.points), 0) AS totalPointsAwarded
+      FROM drivers d
+      JOIN users u ON d.user_id = u.id
+      WHERE u.role = 'Driver'
+        AND u.sponsor = ?
+      `,
+      [sponsor]
+    );
+
+    const [[applicationStats]] = await pool.query(
+      `
+      SELECT COUNT(*) AS pendingApplications
+      FROM applications
+      WHERE role = 'Driver'
+        AND sponsor = ?
+      `,
+      [sponsor]
+    );
+
+    res.json({
+      sponsorName: sponsor,
+      activeDrivers: Number(driverStats.activeDrivers || 0),
+      totalPointsAwarded: Number(driverStats.totalPointsAwarded || 0),
+      pendingApplications: Number(applicationStats.pendingApplications || 0)
+    });
+  } catch (err) {
+    console.error("sponsor dashboard summary error:", err);
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
 //Start server
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on http://localhost:${PORT}`);
