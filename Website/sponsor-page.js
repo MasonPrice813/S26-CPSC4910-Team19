@@ -14,6 +14,47 @@ const saveCriteriaBtn = document.getElementById("saveSettingsBtn");
 
 const transactionRangeFilter = document.getElementById("transactionRangeFilter");
 
+function formatNumber(value) {
+  return Number(value || 0).toLocaleString("en-US");
+}
+
+function setSponsorHeader(name) {
+  sponsorName = name || "";
+  const heading = document.getElementById("sponsorNameHeading");
+  if (heading) {
+    heading.textContent = sponsorName || "Sponsor Dashboard";
+  }
+}
+
+async function loadDashboardSummary() {
+  try {
+    const response = await fetch("/api/sponsor/dashboard-summary");
+    if (!response.ok) throw new Error("Failed to load dashboard summary");
+
+    const data = await response.json();
+
+    setSponsorHeader(data.sponsorName);
+
+    const activeDriversStat = document.getElementById("activeDriversStat");
+    const totalPointsStat = document.getElementById("totalPointsStat");
+    const pendingApplicationsStat = document.getElementById("pendingApplicationsStat");
+
+    if (activeDriversStat) {
+      activeDriversStat.textContent = formatNumber(data.activeDrivers);
+    }
+
+    if (totalPointsStat) {
+      totalPointsStat.textContent = formatNumber(data.totalPointsAwarded);
+    }
+
+    if (pendingApplicationsStat) {
+      pendingApplicationsStat.textContent = formatNumber(data.pendingApplications || 0);
+    }
+  } catch (err) {
+    console.error("Error loading dashboard summary:", err);
+  }
+}
+
 function formatDateTime(value) {
   if (!value) return "—";
   return new Date(value).toLocaleString("en-US", {
@@ -38,23 +79,36 @@ function getDriverId(driver) {
   return driver.driver_id ?? driver.user_id;
 }
 
-function setQuickStats(drivers, transactions) {
+function setQuickStats(drivers, pendingApplicationsCount = null) {
   const activeDriversStat = document.getElementById("activeDriversStat");
   const totalPointsStat = document.getElementById("totalPointsStat");
-  const transactionsShownStat = document.getElementById("transactionsShownStat");
+  const pendingApplicationsStat = document.getElementById("pendingApplicationsStat");
 
   if (activeDriversStat) {
-    activeDriversStat.textContent = String(drivers.length);
+    activeDriversStat.textContent = formatNumber(drivers.length);
   }
 
   if (totalPointsStat) {
-    totalPointsStat.textContent = String(
+    totalPointsStat.textContent = formatNumber(
       drivers.reduce((sum, driver) => sum + Number(driver.points || 0), 0)
     );
   }
 
-  if (transactionsShownStat) {
-    transactionsShownStat.textContent = String(transactions.length);
+  if (pendingApplicationsStat && pendingApplicationsCount !== null) {
+    pendingApplicationsStat.textContent = formatNumber(pendingApplicationsCount || 0);
+  }
+}
+
+async function fetchPendingApplicationsCount() {
+  try {
+    const response = await fetch("/api/sponsor/applications");
+    if (!response.ok) throw new Error("Failed to load applications");
+
+    const data = await response.json();
+    return Array.isArray(data.applications) ? data.applications.length : 0;
+  } catch (err) {
+    console.error("Error loading applications:", err);
+    return 0;
   }
 }
 
@@ -133,11 +187,16 @@ async function loadDrivers() {
     }
 
     populateDriverDropdowns(sponsorDriversCache);
+
+    const pendingCount = await fetchPendingApplicationsCount();
+    setQuickStats(sponsorDriversCache, pendingCount);
+
     return sponsorDriversCache;
   } catch (err) {
     console.error("Error loading drivers:", err);
     sponsorDriversCache = [];
     populateDriverDropdowns([]);
+    setQuickStats([], 0);
     return [];
   }
 }
@@ -221,7 +280,8 @@ async function loadTransactions() {
           <td colspan="5">No transactions found.</td>
         </tr>
       `;
-      setQuickStats(sponsorDriversCache, sponsorTransactionsCache);
+      const pendingCount = await fetchPendingApplicationsCount();
+      setQuickStats(sponsorDriversCache, pendingCount);
       return;
     }
 
@@ -240,7 +300,8 @@ async function loadTransactions() {
       tableBody.appendChild(row);
     });
 
-    setQuickStats(sponsorDriversCache, sponsorTransactionsCache);
+    const pendingCount = await fetchPendingApplicationsCount();
+    setQuickStats(sponsorDriversCache, pendingCount);
   } catch (err) {
     console.error("Error loading transactions:", err);
     sponsorTransactionsCache = [];
@@ -251,7 +312,8 @@ async function loadTransactions() {
       </tr>
     `;
 
-    setQuickStats(sponsorDriversCache, sponsorTransactionsCache);
+    const pendingCount = await fetchPendingApplicationsCount();
+    setQuickStats(sponsorDriversCache, pendingCount);
   }
 }
 
@@ -496,13 +558,130 @@ async function updateDriverPoints(driverId, amount, reason, refreshAfter = true)
   }
 }
 
+async function approveApplication(applicationId) {
+  try {
+    const response = await fetch(`/api/sponsor/applications/${applicationId}/approve`, {
+      method: "POST"
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      alert(errorData.error || "Failed to approve application.");
+      return;
+    }
+
+    await loadApplications();
+    await loadDrivers();
+    await loadDashboardSummary();
+    await renderChart();
+  } catch (err) {
+    console.error("Approve application error:", err);
+    alert("Failed to approve application.");
+  }
+}
+
+async function rejectApplication(applicationId) {
+  try {
+    const response = await fetch(`/api/sponsor/applications/${applicationId}/reject`, {
+      method: "POST"
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      alert(errorData.error || "Failed to reject application.");
+      return;
+    }
+
+    await loadApplications();
+    await loadDashboardSummary();
+  } catch (err) {
+    console.error("Reject application error:", err);
+    alert("Failed to reject application.");
+  }
+}
+
+function buildApplicationViewMessage(app) {
+  return [
+    `Name: ${app.first_name || ""} ${app.last_name || ""}`.trim(),
+    `Email: ${app.email || "—"}`,
+    `Phone: ${app.phone_number || "—"}`,
+    `Sponsor: ${app.sponsor || "—"}`,
+    `Username: ${app.username || "—"}`,
+    `Age: ${app.age || "—"}`,
+    `DOB: ${app.dob ? formatDateOnly(app.dob) : "—"}`,
+    `SSN Last 4: ${app.ssn_last4 || "—"}`,
+    `Driver License #: ${app.dl_num || "—"}`,
+    `DL Expiration: ${app.dl_expiration ? formatDateOnly(app.dl_expiration) : "—"}`,
+    `Driving Record: ${app.driving_record || "—"}`,
+    `Criminal History: ${app.criminal_history || "—"}`
+  ].join("\n");
+}
+
+async function loadApplications() {
+  const tbody = document.getElementById("applicationsTableBody");
+  if (!tbody) return;
+
+  try {
+    const response = await fetch("/api/sponsor/applications");
+    if (!response.ok) throw new Error("Failed to load applications");
+
+    const data = await response.json();
+    const applications = Array.isArray(data.applications) ? data.applications : [];
+
+    tbody.innerHTML = "";
+
+    if (!applications.length) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="4">No pending applications</td>
+        </tr>
+      `;
+      return;
+    }
+
+    applications.forEach(app => {
+      const row = document.createElement("tr");
+
+      row.innerHTML = `
+        <td>${app.first_name || ""} ${app.last_name || ""}</td>
+        <td>${app.email || "—"}</td>
+        <td>${formatDateOnly(app.created_at)}</td>
+        <td>
+          <div class="application-actions">
+            <button class="btn btn-primary approve-app-btn">Approve</button>
+            <button class="btn btn-secondary reject-app-btn">Reject</button>
+            <button class="btn btn-secondary view-app-btn">View</button>
+          </div>
+        </td>
+      `;
+
+      row.querySelector(".approve-app-btn").onclick = () => approveApplication(app.id);
+      row.querySelector(".reject-app-btn").onclick = () => rejectApplication(app.id);
+      row.querySelector(".view-app-btn").onclick = () => {
+        alert(buildApplicationViewMessage(app));
+      };
+
+      tbody.appendChild(row);
+    });
+  } catch (err) {
+    console.error("Error loading applications:", err);
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="4">Unable to load applications</td>
+      </tr>
+    `;
+  }
+}
+
 timeViewSelect?.addEventListener("change", renderChart);
 driverFilterSelect?.addEventListener("change", renderChart);
 transactionDriverFilter?.addEventListener("change", loadTransactions);
 transactionRangeFilter?.addEventListener("change", loadTransactions);
 
 document.addEventListener("DOMContentLoaded", async () => {
+  await loadDashboardSummary();
   await loadDrivers();
+  await loadApplications();
   await renderChart();
   await loadSponsorSettings();
   await loadTransactions();

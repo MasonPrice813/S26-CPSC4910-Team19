@@ -313,7 +313,8 @@ app.get("/api/sponsor/applications", requireSponsor, async (req, res) => {
          driving_record,
          criminal_history,
          dl_num,
-         dl_expiration
+         dl_expiration,
+         created_at
        FROM applications
        WHERE role = 'Driver' AND sponsor = ?
        ORDER BY id DESC`,
@@ -1028,63 +1029,97 @@ app.delete("/api/admin/users/:id", requireAdmin, async (req, res) => {
 });
 
 // Getting data from the graph in week, month, year spans for each driver and average
-app.get("/api/points", async (req, res) => { 
-  const view = req.query.view;
-  const driver = req.query.driver;
-  let dateFormat;
-  let groupBy;
-  let dateFilter;
-
-  // Date SQL code
-  if (view === "year") {
-    dateFormat = "%b";
-    groupBy = "MONTH(created_at)";
-    dateFilter = "YEAR(created_at) = YEAR(CURDATE())";
-  } 
-  else if (view === "month") {
-    dateFormat = "%u";
-    groupBy = "WEEK(created_at)";
-    dateFilter = "MONTH(created_at) = MONTH(CURDATE())";
-  } 
-  else {
-    dateFormat = "%a";
-    groupBy = "DAY(created_at)";
-    dateFilter = "YEARWEEK(created_at, 1) = YEARWEEK(CURDATE(), 1)";
-  }
-
-  // Driver SQL code 
-  let sql;
-  let params = [];
-  if (driver === "all") {
-    sql = `
-      SELECT 
-        DATE_FORMAT(created_at, '${dateFormat}') AS label,
-        AVG(points_after) AS value
-      FROM driver_point_history
-      WHERE ${dateFilter}
-      GROUP BY ${groupBy}
-      ORDER BY MIN(created_at)
-    `;
-  } 
-  else {
-    sql = `
-      SELECT 
-        DATE_FORMAT(created_at, '${dateFormat}') AS label,
-        MAX(points_after) AS value
-      FROM driver_point_history
-      WHERE driver_id = ?
-        AND ${dateFilter}
-      GROUP BY ${groupBy}
-      ORDER BY MIN(created_at)
-    `;
-    params.push(driver);
-  }
-
+app.get("/api/points", async (req, res) => {
   try {
+    const view = req.query.view;
+    const driver = req.query.driver;
+    const me = req.session.user;
+
+    let dateFormat;
+    let groupBy;
+    let dateFilter;
+
+    if (view === "year") {
+      dateFormat = "%b";
+      groupBy = "MONTH(h.created_at)";
+      dateFilter = "YEAR(h.created_at) = YEAR(CURDATE())";
+    } else if (view === "month") {
+      dateFormat = "%u";
+      groupBy = "WEEK(h.created_at)";
+      dateFilter = "MONTH(h.created_at) = MONTH(CURDATE()) AND YEAR(h.created_at) = YEAR(CURDATE())";
+    } else {
+      dateFormat = "%a";
+      groupBy = "DAY(h.created_at)";
+      dateFilter = "YEARWEEK(h.created_at, 1) = YEARWEEK(CURDATE(), 1)";
+    }
+
+    let sql = "";
+    const params = [];
+
+    const isSponsor = me && me.role === "Sponsor" && me.sponsor;
+
+    if (driver === "all") {
+      if (isSponsor) {
+        sql = `
+          SELECT
+            DATE_FORMAT(h.created_at, '${dateFormat}') AS label,
+            AVG(h.points_after) AS value
+          FROM driver_point_history h
+          JOIN drivers d ON h.driver_id = d.id
+          JOIN users u ON d.user_id = u.id
+          WHERE ${dateFilter}
+            AND u.role = 'Driver'
+            AND u.sponsor = ?
+          GROUP BY ${groupBy}
+          ORDER BY MIN(h.created_at)
+        `;
+        params.push(me.sponsor);
+      } else {
+        sql = `
+          SELECT
+            DATE_FORMAT(h.created_at, '${dateFormat}') AS label,
+            AVG(h.points_after) AS value
+          FROM driver_point_history h
+          WHERE ${dateFilter}
+          GROUP BY ${groupBy}
+          ORDER BY MIN(h.created_at)
+        `;
+      }
+    } else {
+      if (isSponsor) {
+        sql = `
+          SELECT
+            DATE_FORMAT(h.created_at, '${dateFormat}') AS label,
+            MAX(h.points_after) AS value
+          FROM driver_point_history h
+          JOIN drivers d ON h.driver_id = d.id
+          JOIN users u ON d.user_id = u.id
+          WHERE h.driver_id = ?
+            AND ${dateFilter}
+            AND u.role = 'Driver'
+            AND u.sponsor = ?
+          GROUP BY ${groupBy}
+          ORDER BY MIN(h.created_at)
+        `;
+        params.push(driver, me.sponsor);
+      } else {
+        sql = `
+          SELECT
+            DATE_FORMAT(h.created_at, '${dateFormat}') AS label,
+            MAX(h.points_after) AS value
+          FROM driver_point_history h
+          WHERE h.driver_id = ?
+            AND ${dateFilter}
+          GROUP BY ${groupBy}
+          ORDER BY MIN(h.created_at)
+        `;
+        params.push(driver);
+      }
+    }
+
     const [rows] = await pool.query(sql, params);
     res.json(rows);
-  } 
-  catch (err) {
+  } catch (err) {
     console.error("DB ERROR:", err);
     res.status(500).json({ error: "Database error" });
   }
@@ -2427,6 +2462,49 @@ function getHistoryStartDate(range) {
 
   return null;
 }
+
+app.get("/api/sponsor/dashboard-summary", requireSponsor, async (req, res) => {
+  try {
+    const sponsor = req.me.sponsor;
+
+    if (!sponsor) {
+      return res.status(400).json({ error: "Sponsor account is missing sponsor organization." });
+    }
+
+    const [[driverStats]] = await pool.query(
+      `
+      SELECT
+        COUNT(*) AS activeDrivers,
+        COALESCE(SUM(d.points), 0) AS totalPointsAwarded
+      FROM drivers d
+      JOIN users u ON d.user_id = u.id
+      WHERE u.role = 'Driver'
+        AND u.sponsor = ?
+      `,
+      [sponsor]
+    );
+
+    const [[applicationStats]] = await pool.query(
+      `
+      SELECT COUNT(*) AS pendingApplications
+      FROM applications
+      WHERE role = 'Driver'
+        AND sponsor = ?
+      `,
+      [sponsor]
+    );
+
+    res.json({
+      sponsorName: sponsor,
+      activeDrivers: Number(driverStats.activeDrivers || 0),
+      totalPointsAwarded: Number(driverStats.totalPointsAwarded || 0),
+      pendingApplications: Number(applicationStats.pendingApplications || 0)
+    });
+  } catch (err) {
+    console.error("sponsor dashboard summary error:", err);
+    res.status(500).json({ error: "Database error" });
+  }
+});
 
 //Start server
 app.listen(PORT, "0.0.0.0", () => {
