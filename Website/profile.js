@@ -1,5 +1,9 @@
 const sectionsContainer = document.getElementById("sections-container");
 let cropMode = false;
+let myChart;
+let myPointsData = [];
+const myCtx = document.getElementById("myPointsChart")?.getContext("2d");
+const myTimeViewSelect = document.getElementById("myTimeView");
 // PLACE TO ADD REST OF PROFILE INFORMATION
 let sections = [
     {
@@ -335,71 +339,124 @@ async function removeSection(id) {
 
 let pointHistoryData = [];
 async function loadPointHistory() {
-  try {
-    const history = await getJSON("/api/me/points-history");
-    pointHistoryData = history;
-    const container = document.getElementById("pointsHistory");
-    container.innerHTML = "";
+    try {
+        const history = await getJSON("/api/me/points-history");
+        pointHistoryData = history;
+        const container = document.getElementById("pointsHistory");
+        container.innerHTML = "";
 
-    if (!history.length) {
-      container.innerHTML = `<p class="muted small">No point history yet.</p>`;
-      return;
+        if (!history.length) {
+        container.innerHTML = `<p class="muted small">No point history yet.</p>`;
+        return;
+        }
+
+        history.forEach(entry => {
+        const div = document.createElement("div");
+        div.className = "history-item";
+        const sign = entry.points_change > 0 ? "+" : "";
+
+        div.innerHTML = `
+            <div><strong>${sign}${entry.points_change} points</strong></div>
+            <div class="muted small">
+            ${entry.reason || "No reason provided"}
+            </div>
+            <div class="muted small">
+            ${new Date(entry.created_at).toLocaleString()}
+            </div>
+            <hr />
+        `;
+
+        container.appendChild(div);
+        });
+    renderMyChart();
+    } catch (err) {
+        console.error("Failed to load history:", err);
     }
-
-    history.forEach(entry => {
-      const div = document.createElement("div");
-      div.className = "history-item";
-      const sign = entry.points_change > 0 ? "+" : "";
-
-      div.innerHTML = `
-        <div><strong>${sign}${entry.points_change} points</strong></div>
-        <div class="muted small">
-          ${entry.reason || "No reason provided"}
-        </div>
-        <div class="muted small">
-          ${new Date(entry.created_at).toLocaleString()}
-        </div>
-        <hr />
-      `;
-
-      container.appendChild(div);
-    });
-  } catch (err) {
-    console.error("Failed to load history:", err);
-  }
 }
 
 function downloadCSV() {
-  if (!pointHistoryData.length) {
-    alert("No data to download");
-    return;
-  }
-  const headers = ["Points Change", "Reason", "Date"];
+    if (!pointHistoryData.length) {
+        alert("No data to download");
+        return;
+    }
+    const headers = ["Points Change", "Reason", "Date"];
 
-  // Converting Data to Rows in CSV
-  const rows = pointHistoryData.map(entry => [
-    entry.points_change,
-    `"${(entry.reason || "No reason provided").replace(/"/g, '""')}"`,
-    new Date(entry.created_at).toLocaleString()
-  ]);
+    // Converting Data to Rows in CSV
+    const rows = pointHistoryData.map(entry => [
+        entry.points_change,
+        `"${(entry.reason || "No reason provided").replace(/"/g, '""')}"`,
+        new Date(entry.created_at).toLocaleString()
+    ]);
 
-  // Joining together and putting into blob
-  const csvContent = [
-    headers.join(","),
-    ...rows.map(row => row.join(","))
-  ].join("\n");
-  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
+    // Joining together and putting into blob
+    const csvContent = [
+        headers.join(","),
+        ...rows.map(row => row.join(","))
+     ].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
 
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = "point_history.csv";
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "point_history.csv";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
 }
 
 document.getElementById("downloadCSV").addEventListener("click", downloadCSV);
+
+// Profile Chart
+function groupByView(data, view) {
+    const grouped = {};
+    data.forEach(entry => {
+        const date = new Date(entry.created_at);
+        let key;
+
+        if (view === "week") {
+            key = date.toLocaleDateString("en-US", { weekday: "short" });
+        } 
+        else if (view === "month") {
+            key = date.getDate();
+        } 
+        else {
+            key = date.toLocaleDateString("en-US", { month: "short" });
+        }
+
+        grouped[key] = (grouped[key] || 0) + entry.points_change;
+    });
+    return Object.entries(grouped).map(([label, value]) => ({ label, value }));
+}
+
+async function renderMyChart() {
+    if (!myCtx || !myTimeViewSelect) return;
+    const view = myTimeViewSelect.value;
+    const data = groupByView(pointHistoryData, view);
+    const labels = data.map(d => d.label);
+    const values = data.map(d => d.value);
+    
+    if (myChart) myChart.destroy();
+    myChart = new Chart(myCtx, {
+        type: "line",
+        data: {
+        labels,
+        datasets: [{
+            label: "Your Points",
+            data: values,
+            borderWidth: 3,
+            tension: 0.3
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: true
+    }
+    });
+}
+// Driver changes view
+if (myTimeViewSelect) {
+    myTimeViewSelect.addEventListener("change", renderMyChart);
+}
 
 sectionsContainer.addEventListener("click", function(e) {
     const sectionDiv = e.target.closest(".content-box");
