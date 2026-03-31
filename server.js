@@ -677,33 +677,6 @@ function requireLogin(req, res, next) {
   next();
 }
 
-app.get("/api/sponsor/spend-log", async (req, res) => {
-  try {
-    const sponsorId = req.session.user.id;
-
-    const [rows] = await pool.query(`
-      SELECT 
-        u.first_name,
-        u.last_name,
-        ph.points_change,
-        ph.created_at
-      FROM point_history ph
-      JOIN drivers d ON ph.driver_id = d.driver_id
-      JOIN users u ON d.user_id = u.id
-      WHERE d.sponsor_id = ?
-      AND ph.points_change < 0
-      ORDER BY ph.created_at DESC
-      LIMIT 50
-    `, [sponsorId]);
-
-    res.json(rows);
-
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to load spend log" });
-  }
-});
-
 // Full profile for the currently logged-in user (users + user_profiles)
 app.get("/api/me/profile", requireLogin, async (req, res) => {
   try {
