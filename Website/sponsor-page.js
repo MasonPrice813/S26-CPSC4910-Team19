@@ -79,6 +79,49 @@ function getDriverId(driver) {
   return driver.driver_id ?? driver.user_id;
 }
 
+async function loadSponsorSpendLog() {
+  const container = document.getElementById("sponsorSpendLog");
+  if (!container) return;
+
+  try {
+    const res = await fetch("/api/sponsor/spend-log");
+    if (!res.ok) throw new Error("Failed");
+
+    const data = await res.json();
+
+    container.innerHTML = "";
+
+    if (!data.length) {
+      container.innerHTML = `<p class="muted small">No spending yet.</p>`;
+      return;
+    }
+
+    data.forEach(entry => {
+      const div = document.createElement("div");
+      div.className = "history-item";
+
+      const sign = entry.points_change > 0 ? "+" : "";
+
+      div.innerHTML = `
+        <div>
+          <strong>
+            ${entry.first_name} ${entry.last_name} ${sign}${entry.points_change}
+          </strong>
+        </div>
+        <div class="muted small">
+          ${new Date(entry.created_at).toLocaleString()}
+        </div>
+        <hr />
+      `;
+
+      container.appendChild(div);
+    });
+
+  } catch (err) {
+    console.error(err);
+  }
+}
+
 function setQuickStats(drivers, pendingApplicationsCount = null) {
   const activeDriversStat = document.getElementById("activeDriversStat");
   const totalPointsStat = document.getElementById("totalPointsStat");
@@ -685,4 +728,5 @@ document.addEventListener("DOMContentLoaded", async () => {
   await renderChart();
   await loadSponsorSettings();
   await loadTransactions();
+  await loadSponsorSpendLog();
 });
