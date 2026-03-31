@@ -333,9 +333,11 @@ async function removeSection(id) {
     saveProfileToDB().catch(err => console.error(err));
 }
 
+let pointHistoryData = [];
 async function loadPointHistory() {
   try {
     const history = await getJSON("/api/me/points-history");
+    pointHistoryData = history;
     const container = document.getElementById("pointsHistory");
     container.innerHTML = "";
 
@@ -367,6 +369,37 @@ async function loadPointHistory() {
   }
 }
 
+function downloadCSV() {
+  if (!pointHistoryData.length) {
+    alert("No data to download");
+    return;
+  }
+  const headers = ["Points Change", "Reason", "Date"];
+
+  // Converting Data to Rows in CSV
+  const rows = pointHistoryData.map(entry => [
+    entry.points_change,
+    `"${(entry.reason || "No reason provided").replace(/"/g, '""')}"`,
+    new Date(entry.created_at).toLocaleString()
+  ]);
+
+  // Joining together and putting into blob
+  const csvContent = [
+    headers.join(","),
+    ...rows.map(row => row.join(","))
+  ].join("\n");
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "point_history.csv";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+document.getElementById("downloadCSV").addEventListener("click", downloadCSV);
 
 sectionsContainer.addEventListener("click", function(e) {
     const sectionDiv = e.target.closest(".content-box");
