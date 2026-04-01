@@ -102,30 +102,45 @@ app.get("/api/me", async (req, res) => {
   if (!req.session.user) {
     return res.status(401).json({ error: "Not logged in" });
   }
+
   const me = req.session.user;
 
   try {
     if (me.role === "Driver") {
-      const [rows] = await pool.query(
-        `SELECT points
-         FROM drivers
-         WHERE user_id = ?
-         LIMIT 1`,
-        [me.id]
-      );
-
-      const points = rows.length ? Number(rows[0].points || 0) : 0;
-      const userWithPoints = {
+      return res.json({
         ...me,
-        points: points
-      };
-
-      return res.json(userWithPoints);
+        points: 0
+      });
     }
-    return res.json(me);
 
+    return res.json(me);
   } catch (err) {
     console.error("/api/me error:", err);
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
+app.get("/api/me/driver-sponsors", requireLogin, async (req, res) => {
+  try {
+    if (req.session.user.role !== "Driver") {
+      return res.status(403).json({ error: "Drivers only" });
+    }
+
+    const [rows] = await pool.query(
+      `SELECT
+         sponsor_name,
+         points,
+         status
+       FROM user_sponsors
+       WHERE user_id = ?
+         AND status = 'Active'
+       ORDER BY sponsor_name ASC`,
+      [req.session.user.id]
+    );
+
+    res.json({ sponsors: rows });
+  } catch (err) {
+    console.error("driver sponsors error:", err);
     res.status(500).json({ error: "Database error" });
   }
 });
@@ -1644,7 +1659,17 @@ app.post("/api/orders/checkout", requireLogin, async (req, res) => {
     return res.status(403).json({ error: "Drivers only" });
   }
 
-  const { items, shipping_method, shipping_point_cost, shipping_dollar_cost } = req.body || {};
+  const {
+    items,
+    shipping_method,
+    shipping_point_cost,
+    shipping_dollar_cost,
+    sponsor_name
+  } = req.body || {};
+
+  if (!sponsor_name) {
+    return res.status(400).json({ error: "A sponsor must be selected for checkout." });
+  }
 
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: "Cart is empty." });
@@ -1716,7 +1741,7 @@ app.post("/api/orders/checkout", requireLogin, async (req, res) => {
     await conn.beginTransaction();
 
     const [driverRows] = await conn.query(
-      `SELECT id, points
+      `SELECT id
        FROM drivers
        WHERE user_id = ?
        LIMIT 1
@@ -1730,7 +1755,24 @@ app.post("/api/orders/checkout", requireLogin, async (req, res) => {
     }
 
     const driverId = driverRows[0].id;
-    const currentPoints = Number(driverRows[0].points || 0);
+
+    const [walletRows] = await conn.query(
+      `SELECT points
+       FROM user_sponsors
+       WHERE user_id = ?
+         AND sponsor_name = ?
+         AND status = 'Active'
+       LIMIT 1
+       FOR UPDATE`,
+      [me.id, sponsor_name]
+    );
+
+    if (walletRows.length === 0) {
+      await conn.rollback();
+      return res.status(404).json({ error: "Selected sponsor wallet not found." });
+    }
+
+    const currentPoints = Number(walletRows[0].points || 0);
 
     if (currentPoints < totalPointCost) {
       await conn.rollback();
@@ -1747,11 +1789,12 @@ app.post("/api/orders/checkout", requireLogin, async (req, res) => {
       for (let i = 0; i < item.qty; i++) {
         await conn.query(
           `INSERT INTO orders
-              (group_id, user_id, product_id, point_cost, dollar_cost, shipping_method, expected_delivery_date, date_ordered)
-            VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`,
+             (group_id, user_id, sponsor_name, product_id, point_cost, dollar_cost, shipping_method, expected_delivery_date, date_ordered)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
           [
             groupId,
             me.id,
+            sponsor_name,
             item.productId,
             item.pointCost,
             item.dollarCost,
@@ -1763,22 +1806,24 @@ app.post("/api/orders/checkout", requireLogin, async (req, res) => {
     }
 
     await conn.query(
-      `UPDATE drivers
+      `UPDATE user_sponsors
        SET points = points - ?
-       WHERE user_id = ?`,
-      [totalPointCost, me.id]
+       WHERE user_id = ?
+         AND sponsor_name = ?`,
+      [totalPointCost, me.id, sponsor_name]
     );
 
     await conn.query(
       `INSERT INTO driver_point_history
-         (driver_id, points_change, points_before, points_after, reason, created_at)
-       VALUES (?, ?, ?, ?, ?, NOW())`,
+         (driver_id, sponsor_name, points_change, points_before, points_after, reason, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, NOW())`,
       [
         driverId,
+        sponsor_name,
         -totalPointCost,
         currentPoints,
         currentPoints - totalPointCost,
-        `Catalog checkout (${shipping_method}, shipping ${cleanShippingPointCost} pts)`
+        `Catalog checkout (${sponsor_name}, ${shipping_method}, shipping ${cleanShippingPointCost} pts)`
       ]
     );
 
@@ -2405,14 +2450,19 @@ app.get('/api/sponsor/transactions', async (req, res) => {
         u.id AS user_id,
         u.first_name,
         u.last_name,
-        u.sponsor
+        o.sponsor_name AS sponsor
       FROM orders o
-      JOIN users u ON o.user_id = u.id
-      WHERE u.sponsor = ?
+      JOIN users u
+        ON o.user_id = u.id
+      JOIN user_sponsors us
+        ON us.user_id = u.id
+      WHERE o.sponsor_name = ?
+        AND us.sponsor_name = ?
+        AND us.status = 'Active'
         AND u.role = 'Driver'
     `;
 
-    const params = [sponsor];
+    const params = [sponsor, sponsor];
 
     if (driver_id) {
       query += ` AND u.id = ?`;
@@ -2633,11 +2683,15 @@ app.get("/api/sponsor/dashboard-summary", requireSponsor, async (req, res) => {
       `
       SELECT
         COUNT(*) AS activeDrivers,
-        COALESCE(SUM(d.points), 0) AS totalPointsAwarded
-      FROM drivers d
-      JOIN users u ON d.user_id = u.id
+        COALESCE(SUM(us.points), 0) AS totalPointsAwarded
+      FROM user_sponsors us
+      JOIN users u
+        ON u.id = us.user_id
+      JOIN drivers d
+        ON d.user_id = u.id
       WHERE u.role = 'Driver'
-        AND u.sponsor = ?
+        AND us.sponsor_name = ?
+        AND us.status = 'Active'
       `,
       [sponsor]
     );
@@ -2645,9 +2699,12 @@ app.get("/api/sponsor/dashboard-summary", requireSponsor, async (req, res) => {
     const [[applicationStats]] = await pool.query(
       `
       SELECT COUNT(*) AS pendingApplications
-      FROM applications
-      WHERE role = 'Driver'
-        AND sponsor = ?
+      FROM applications a
+      JOIN application_sponsors aps
+        ON aps.application_id = a.id
+      WHERE a.role = 'Driver'
+        AND a.status = 'Pending'
+        AND aps.sponsor_name = ?
       `,
       [sponsor]
     );

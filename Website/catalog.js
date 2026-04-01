@@ -23,6 +23,9 @@ let purchasedProductIds = [];
 
 let CURRENT_USER_ROLE = null;
 let CURRENT_USER_SPONSOR = null;
+let DRIVER_SPONSORS = [];
+let ACTIVE_DRIVER_SPONSOR = null;
+
 let HIDDEN_PRODUCT_IDS = new Set();
 
 const POINTS_PER_DOLLAR = 10; // 10 points = $1
@@ -40,7 +43,9 @@ function formatDollars(priceDollars) {
 }
 
 function getCartStorageKey() {
-  return CURRENT_USER_ID ? `catalogCart_${CURRENT_USER_ID}` : "catalogCart_guest";
+  if (!CURRENT_USER_ID) return "catalogCart_guest";
+  const sponsorPart = ACTIVE_DRIVER_SPONSOR || "no_sponsor";
+  return `catalogCart_${CURRENT_USER_ID}_${sponsorPart}`;
 }
 
 function loadCart() {
@@ -123,7 +128,12 @@ function updatePointsDisplay() {
     document.getElementById("pointsBalance");
 
   if (pointsEl) {
-    pointsEl.textContent = `Points: ${getAvailablePoints()}`;
+    const sponsorPrefix =
+      CURRENT_USER_ROLE === "Driver" && ACTIVE_DRIVER_SPONSOR
+        ? `${ACTIVE_DRIVER_SPONSOR}: `
+        : "";
+
+    pointsEl.textContent = `${sponsorPrefix}Points: ${getAvailablePoints()}`;
     pointsEl.style.display = "inline";
   }
 }
@@ -988,6 +998,76 @@ async function openHiddenItemsView() {
   }
 }
 
+function getSavedActiveDriverSponsor() {
+  if (!CURRENT_USER_ID) return null;
+  return localStorage.getItem(`activeDriverSponsor_${CURRENT_USER_ID}`);
+}
+
+function saveActiveDriverSponsor(sponsorName) {
+  if (!CURRENT_USER_ID) return;
+  localStorage.setItem(`activeDriverSponsor_${CURRENT_USER_ID}`, sponsorName || "");
+}
+
+async function loadDriverSponsors() {
+  const data = await getJSON("/api/me/driver-sponsors");
+  DRIVER_SPONSORS = Array.isArray(data?.sponsors) ? data.sponsors : [];
+  return DRIVER_SPONSORS;
+}
+
+function getActiveDriverSponsorRecord() {
+  return DRIVER_SPONSORS.find((s) => s.sponsor_name === ACTIVE_DRIVER_SPONSOR) || null;
+}
+
+function refreshActiveDriverSponsorPoints() {
+  const rec = getActiveDriverSponsorRecord();
+  CURRENT_USER_POINTS = rec ? Number(rec.points || 0) : 0;
+  updatePointsDisplay();
+}
+
+function renderDriverSponsorDropdown() {
+  const wrap = document.getElementById("driverSponsorPickerWrap");
+  const select = document.getElementById("driverSponsorSelect");
+
+  if (!wrap || !select) return;
+
+  if (CURRENT_USER_ROLE !== "Driver" || DRIVER_SPONSORS.length === 0) {
+    wrap.style.display = "none";
+    return;
+  }
+
+  wrap.style.display = "block";
+  select.innerHTML = "";
+
+  DRIVER_SPONSORS.forEach((row) => {
+    const opt = document.createElement("option");
+    opt.value = row.sponsor_name;
+    opt.textContent = `${row.sponsor_name} (${Number(row.points || 0)} pts)`;
+    select.appendChild(opt);
+  });
+
+  const saved = getSavedActiveDriverSponsor();
+  const validSaved = DRIVER_SPONSORS.some((s) => s.sponsor_name === saved);
+
+  ACTIVE_DRIVER_SPONSOR = validSaved
+    ? saved
+    : DRIVER_SPONSORS[0].sponsor_name;
+
+  select.value = ACTIVE_DRIVER_SPONSOR;
+  saveActiveDriverSponsor(ACTIVE_DRIVER_SPONSOR);
+  refreshActiveDriverSponsorPoints();
+
+  select.addEventListener("change", () => {
+    ACTIVE_DRIVER_SPONSOR = select.value || null;
+    saveActiveDriverSponsor(ACTIVE_DRIVER_SPONSOR);
+    loadCart();
+    updateCartBadge();
+    refreshActiveDriverSponsorPoints();
+    renderCartPanel();
+    renderRecommendedProducts();
+    applyFilters();
+  });
+}
+
 async function submitCatalogItemRequest(requestText) {
   const res = await fetch("/api/catalog/item-requests", {
     method: "POST",
@@ -1093,23 +1173,15 @@ document.addEventListener("DOMContentLoaded", async () => {
     CURRENT_USER_ROLE = String(me.role || "");
     CURRENT_USER_SPONSOR = me.sponsor || null;
 
-    if (notificationsBtn) {
-      notificationsBtn.style.display = "inline-block";
-
-      notificationsBtn.addEventListener("click", () => {
-        window.location.href = "/Website/notifications.html";
-      });
-    }
-
-    await loadNotificationCount();
-
-    if (me.role === "Driver") {
+    if (CURRENT_USER_ROLE === "Driver") {
+      await loadDriverSponsors();
+      renderDriverSponsorDropdown();
       loadCart();
+    } else {
+      CURRENT_USER_POINTS = Number(me.points || 0);
     }
 
-    CURRENT_USER_POINTS = Number(me.points || 0);
-
-    if (me.role === "Driver") {
+    if (CURRENT_USER_ROLE === "Driver") {
       updatePointsDisplay();
 
       if (cartBtn) {
@@ -1178,6 +1250,11 @@ document.addEventListener("DOMContentLoaded", async () => {
 
           confirmCheckoutBtn.disabled = true;
 
+          if (CURRENT_USER_ROLE === "Driver" && !ACTIVE_DRIVER_SPONSOR) {
+            alert("Please select a sponsor before checkout.");
+            return;
+          }
+
           try {
             const res = await fetch("/api/orders/checkout", {
               method: "POST",
@@ -1186,10 +1263,16 @@ document.addEventListener("DOMContentLoaded", async () => {
               },
               credentials: "same-origin",
               body: JSON.stringify({
-                items: cart,
+                items: cart.map(item => ({
+                  productId: item.productId,
+                  qty: item.qty,
+                  pointCost: item.pointCost,
+                  dollarCost: item.dollarCost
+                })),
                 shipping_method: selectedShipping,
                 shipping_point_cost: getShippingPointCost(),
-                shipping_dollar_cost: getShippingDollarCost()
+                shipping_dollar_cost: getShippingDollarCost(),
+                sponsor_name: ACTIVE_DRIVER_SPONSOR
               })
             });
 
@@ -1200,6 +1283,14 @@ document.addEventListener("DOMContentLoaded", async () => {
             }
 
             CURRENT_USER_POINTS = Number(data.remainingPoints || 0);
+
+            const activeRecord = DRIVER_SPONSORS.find(
+              s => s.sponsor_name === ACTIVE_DRIVER_SPONSOR
+            );
+            if (activeRecord) {
+              activeRecord.points = CURRENT_USER_POINTS;
+            }
+            
             clearCart();
 
             if (checkoutPanel) {

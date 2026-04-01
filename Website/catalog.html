@@ -69,14 +69,22 @@
 
     <div class="content-box">
 
-        <h2>
-            Rewards Catalog
-            <span id="pointsValue" style="float:right; display:none;">Points: 0</span>
-        </h2>
+        <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:12px; flex-wrap:wrap;">
+            <div>
+                <h2 style="margin:0;">Rewards Catalog</h2>
+                <p class="info-row" style="margin:6px 0 0 0;">
+                    Redeem your points for rewards below.
+                </p>
+            </div>
 
-        <p class="info-row">
-            Redeem your points for rewards below.
-        </p>
+            <div id="driverSponsorPickerWrap" style="display:none; min-width:220px;">
+                <label class="muted small" for="driverSponsorSelect">Active Sponsor</label>
+                <select id="driverSponsorSelect">
+                    <option value="">Select sponsor</option>
+                </select>
+                <div id="pointsValue" class="muted small" style="margin-top:6px; display:none;">Points: 0</div>
+            </div>
+        </div>
 
         <div style="margin-top:16px; display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end;">
         <div style="flex: 1 1 260px; min-width: 220px;">
