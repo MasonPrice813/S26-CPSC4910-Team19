@@ -230,6 +230,8 @@ app.put(
 
 //Posting application data to DB on submit
 app.post("/api/applications", async (req, res) => {
+  const conn = await pool.getConnection();
+
   try {
     const {
       role,
@@ -239,14 +241,14 @@ app.post("/api/applications", async (req, res) => {
       password,
       email,
       phone_number,
-      sponsor,
+      sponsors = [],
       ssn_last4,
       age,
       dob,
       driving_record,
       criminal_history,
       dl_num,
-      dl_expiration,
+      dl_expiration
     } = req.body || {};
 
     if (!role || !first_name || !last_name || !email || !password) {
@@ -255,11 +257,17 @@ app.post("/api/applications", async (req, res) => {
 
     const normalizedRole = role === "Administrator" ? "Admin" : role;
 
-    const [result] = await pool.query(
+    if (normalizedRole === "Driver" && (!Array.isArray(sponsors) || sponsors.length === 0)) {
+      return res.status(400).json({ error: "Drivers must select at least one sponsor." });
+    }
+
+    await conn.beginTransaction();
+
+    const [result] = await conn.query(
       `INSERT INTO applications
-        (role, first_name, last_name, username, password, email, phone_number, sponsor,
+        (role, first_name, last_name, username, password, email, phone_number,
          ssn_last4, age, dob, driving_record, criminal_history, dl_num, dl_expiration)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         normalizedRole,
         first_name,
@@ -268,30 +276,36 @@ app.post("/api/applications", async (req, res) => {
         password,
         email,
         phone_number || null,
-        sponsor || null,
         ssn_last4 || null,
         age || null,
         dob || null,
         driving_record || null,
         criminal_history || null,
         dl_num || null,
-        dl_expiration || null,
+        dl_expiration || null
       ]
     );
 
-    res.status(201).json({ ok: true, application_id: result.insertId });
-  } catch (err) {
-    console.error("Insert application error:", {
-    code: err.code,
-    errno: err.errno,
-    sqlMessage: err.sqlMessage,
-    sqlState: err.sqlState,
-  });
+    const applicationId = result.insertId;
 
-    return res.status(500).json({
-      error: "Could not save application.",
-      details: err.sqlMessage || err.code
-    });
+    if (normalizedRole === "Driver") {
+      for (const sponsorName of sponsors) {
+        await conn.query(
+          `INSERT INTO application_sponsors (application_id, sponsor_name)
+           VALUES (?, ?)`,
+          [applicationId, sponsorName]
+        );
+      }
+    }
+
+    await conn.commit();
+    res.status(201).json({ ok: true, application_id: applicationId });
+  } catch (err) {
+    await conn.rollback();
+    console.error("Insert application error:", err);
+    res.status(500).json({ error: "Could not save application." });
+  } finally {
+    conn.release();
   }
 });
 
@@ -299,25 +313,32 @@ app.get("/api/sponsor/applications", requireSponsor, async (req, res) => {
   try {
     const [rows] = await pool.query(
       `SELECT
-         id,
-         role,
-         first_name,
-         last_name,
-         username,
-         email,
-         phone_number,
-         sponsor,
-         ssn_last4,
-         age,
-         dob,
-         driving_record,
-         criminal_history,
-         dl_num,
-         dl_expiration,
-         created_at
-       FROM applications
-       WHERE role = 'Driver' AND sponsor = ?
-       ORDER BY id DESC`,
+          a.id,
+          a.role,
+          a.first_name,
+          a.last_name,
+          a.username,
+          a.email,
+          a.phone_number,
+          aps.sponsor_name AS sponsor,
+          a.ssn_last4,
+          a.age,
+          a.dob,
+          a.driving_record,
+          a.criminal_history,
+          a.dl_num,
+          a.dl_expiration,
+          a.status,
+          a.rejection_reason,
+          a.reviewed_at,
+          a.created_at
+        FROM applications a
+        JOIN application_sponsors aps
+          ON aps.application_id = a.id
+        WHERE a.role = 'Driver'
+          AND aps.sponsor_name = ?
+          AND a.status = 'Pending'
+        ORDER BY a.id DESC`,
       [req.me.sponsor]
     );
 
@@ -376,16 +397,31 @@ app.get("/api/bugs", async (req, res) => {
 //API to move driver data from applications table to users and drivers table
 app.post("/api/sponsor/applications/:id/approve", requireSponsor, async (req, res) => {
   const appId = Number(req.params.id);
-  if (!Number.isFinite(appId)) return res.status(400).json({ error: "Invalid id" });
+  if (!Number.isFinite(appId)) {
+    return res.status(400).json({ error: "Invalid id" });
+  }
 
   const conn = await pool.getConnection();
+
   try {
     await conn.beginTransaction();
 
     const [apps] = await conn.query(
-      `SELECT id, first_name, last_name, username, email, password, phone_number, sponsor
-       FROM applications
-       WHERE id = ? AND role = 'Driver' AND sponsor = ?
+      `SELECT
+          a.id,
+          a.first_name,
+          a.last_name,
+          a.username,
+          a.email,
+          a.password,
+          a.phone_number
+       FROM applications a
+       JOIN application_sponsors aps
+         ON aps.application_id = a.id
+       WHERE a.id = ?
+         AND a.role = 'Driver'
+         AND aps.sponsor_name = ?
+         AND a.status = 'Pending'
        FOR UPDATE`,
       [appId, req.me.sponsor]
     );
@@ -397,42 +433,95 @@ app.post("/api/sponsor/applications/:id/approve", requireSponsor, async (req, re
 
     const a = apps[0];
 
-    const hashedPw = await bcrypt.hash(a.password, 12);
-
-    const [userResult] = await conn.query(
-      `INSERT INTO users
-         (role, first_name, last_name, username, email, password, phone_number, sponsor)
-       VALUES
-         (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        "Driver",
-        a.first_name,
-        a.last_name,
-        a.username,
-        a.email,
-        hashedPw,
-        a.phone_number || null,
-        a.sponsor,
-      ]
+    // Find or create user
+    const [existingUsers] = await conn.query(
+      `SELECT id
+       FROM users
+       WHERE email = ? OR username = ?
+       LIMIT 1`,
+      [a.email, a.username]
     );
 
-    const newUserId = userResult.insertId;
+    let userId;
 
+    if (existingUsers.length > 0) {
+      userId = existingUsers[0].id;
+    } else {
+      const hashedPw = await bcrypt.hash(a.password, 12);
+
+      const [userResult] = await conn.query(
+        `INSERT INTO users
+           (role, first_name, last_name, username, email, password, phone_number, sponsor)
+         VALUES
+           (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          "Driver",
+          a.first_name,
+          a.last_name,
+          a.username,
+          a.email,
+          hashedPw,
+          a.phone_number || null,
+          req.me.sponsor // compatibility field only
+        ]
+      );
+
+      userId = userResult.insertId;
+    }
+
+    // Ensure drivers row exists
+    const [existingDriver] = await conn.query(
+      `SELECT id
+       FROM drivers
+       WHERE user_id = ?
+       LIMIT 1`,
+      [userId]
+    );
+
+    let driverId;
+
+    if (existingDriver.length > 0) {
+      driverId = existingDriver[0].id;
+    } else {
+      const [driverResult] = await conn.query(
+        `INSERT INTO drivers (user_id)
+         VALUES (?)`,
+        [userId]
+      );
+      driverId = driverResult.insertId;
+    }
+
+    // Link user to ALL sponsors on the application
+    const [appSponsors] = await conn.query(
+      `SELECT sponsor_name
+       FROM application_sponsors
+       WHERE application_id = ?`,
+      [a.id]
+    );
+
+    for (const row of appSponsors) {
+      await conn.query(
+        `INSERT IGNORE INTO user_sponsors (user_id, sponsor_name, points, status)
+         VALUES (?, ?, 0, 'Active')`,
+        [userId, row.sponsor_name]
+      );
+    }
+
+    // Mark application accepted
     await conn.query(
-      `INSERT INTO drivers (user_id)
-       VALUES (?)`,
-      [newUserId]
+      `UPDATE applications
+       SET status = 'Accepted',
+           rejection_reason = NULL,
+           reviewed_at = NOW()
+       WHERE id = ?`,
+      [a.id]
     );
-
-    //Delete from applications
-    await conn.query(`DELETE FROM applications WHERE id = ?`, [a.id]);
 
     await conn.commit();
-    res.json({ ok: true, user_id: newUserId });
+    res.json({ ok: true, user_id: userId, driver_id: driverId });
   } catch (err) {
     await conn.rollback();
     console.error("approve error:", err);
-
     res.status(500).json({ error: "Could not approve application." });
   } finally {
     conn.release();
@@ -442,17 +531,33 @@ app.post("/api/sponsor/applications/:id/approve", requireSponsor, async (req, re
 //API to remove application from table when rejected
 app.post("/api/sponsor/applications/:id/reject", requireSponsor, async (req, res) => {
   const appId = Number(req.params.id);
-  if (!Number.isFinite(appId)) return res.status(400).json({ error: "Invalid id" });
+  const { reason } = req.body || {};
+
+  if (!Number.isFinite(appId)) {
+    return res.status(400).json({ error: "Invalid id" });
+  }
+
+  if (!reason || !String(reason).trim()) {
+    return res.status(400).json({ error: "Rejection reason is required." });
+  }
 
   try {
     const [result] = await pool.query(
-      `DELETE FROM applications
-       WHERE id = ? AND role = 'Driver' AND sponsor = ?`,
-      [appId, req.me.sponsor]
+      `UPDATE applications a
+      JOIN application_sponsors aps
+        ON aps.application_id = a.id
+      SET a.status = 'Rejected',
+          a.rejection_reason = ?,
+          a.reviewed_at = NOW()
+      WHERE a.id = ?
+        AND a.role = 'Driver'
+        AND aps.sponsor_name = ?
+        AND a.status = 'Pending'`,
+      [String(reason).trim(), appId, req.me.sponsor]
     );
 
     if (result.affectedRows === 0) {
-      return res.status(404).json({ error: "Application not found for your sponsor." });
+      return res.status(404).json({ error: "Pending application not found for your sponsor." });
     }
 
     res.json({ ok: true });
@@ -1065,11 +1170,8 @@ app.get("/api/points", async (req, res) => {
             DATE_FORMAT(h.created_at, '${dateFormat}') AS label,
             AVG(h.points_after) AS value
           FROM driver_point_history h
-          JOIN drivers d ON h.driver_id = d.id
-          JOIN users u ON d.user_id = u.id
           WHERE ${dateFilter}
-            AND u.role = 'Driver'
-            AND u.sponsor = ?
+            AND h.sponsor_name = ?
           GROUP BY ${groupBy}
           ORDER BY MIN(h.created_at)
         `;
@@ -1093,15 +1195,16 @@ app.get("/api/points", async (req, res) => {
             MAX(h.points_after) AS value
           FROM driver_point_history h
           JOIN drivers d ON h.driver_id = d.id
-          JOIN users u ON d.user_id = u.id
+          JOIN user_sponsors us
+            ON us.user_id = d.user_id
           WHERE h.driver_id = ?
             AND ${dateFilter}
-            AND u.role = 'Driver'
-            AND u.sponsor = ?
+            AND h.sponsor_name = ?
+            AND us.sponsor_name = ?
           GROUP BY ${groupBy}
           ORDER BY MIN(h.created_at)
         `;
-        params.push(driver, me.sponsor);
+        params.push(driver, me.sponsor, me.sponsor);
       } else {
         sql = `
           SELECT
@@ -1126,53 +1229,101 @@ app.get("/api/points", async (req, res) => {
 });
 
 app.post("/api/points/update", async (req, res) => {
+  const conn = await pool.getConnection();
+
   try {
-    const { driverId, amount, reason } = req.body;
+    if (!req.session.user) {
+      return res.status(401).json({ error: "Not logged in" });
+    }
+
+    if (req.session.user.role !== "Sponsor" || !req.session.user.sponsor) {
+      return res.status(403).json({ error: "Sponsors only" });
+    }
+
+    const sponsorName = req.session.user.sponsor;
+    const { driverId, amount, reason } = req.body || {};
 
     if (!driverId || amount === undefined) {
       return res.status(400).json({ error: "Missing data" });
     }
 
-    const [[driver]] = await pool.query(
-      `SELECT d.id, d.points, u.sponsor
+    const numericAmount = Number(amount);
+    if (!Number.isFinite(numericAmount)) {
+      return res.status(400).json({ error: "Invalid points amount" });
+    }
+
+    await conn.beginTransaction();
+
+    const [[driver]] = await conn.query(
+      `SELECT
+         d.id AS driver_id,
+         d.user_id,
+         us.points
        FROM drivers d
-       JOIN users u ON d.user_id = u.id
+       JOIN user_sponsors us
+         ON us.user_id = d.user_id
        WHERE d.id = ?
-       LIMIT 1`,
-      [driverId]
+         AND us.sponsor_name = ?
+         AND us.status = 'Active'
+       LIMIT 1
+       FOR UPDATE`,
+      [driverId, sponsorName]
     );
 
     if (!driver) {
-      return res.status(404).json({ error: "Driver not found" });
+      await conn.rollback();
+      return res.status(404).json({ error: "Driver not found for this sponsor" });
     }
 
-    const [[settings]] = await pool.query(
+    const [[settings]] = await conn.query(
       `SELECT allow_negative
        FROM sponsor_settings
        WHERE sponsor = ?
        LIMIT 1`,
-      [driver.sponsor]
+      [sponsorName]
     );
 
     const allowNegative = settings ? !!settings.allow_negative : false;
-    const newPoints = Number(driver.points || 0) + Number(amount);
+    const pointsBefore = Number(driver.points || 0);
+    const pointsAfter = pointsBefore + numericAmount;
 
-    if (!allowNegative && newPoints < 0) {
+    if (!allowNegative && pointsAfter < 0) {
+      await conn.rollback();
       return res.status(400).json({
         error: "This sponsor does not allow negative point balances."
       });
     }
 
-    await pool.query(
-      `CALL update_driver_points(?, ?, ?)`,
-      [driverId, amount, reason || "Sponsor Adjustment"]
+    await conn.query(
+      `UPDATE user_sponsors
+       SET points = ?
+       WHERE user_id = ?
+         AND sponsor_name = ?`,
+      [pointsAfter, driver.user_id, sponsorName]
     );
 
-    res.json({ success: true });
+    await conn.query(
+      `INSERT INTO driver_point_history
+         (driver_id, sponsor_name, points_change, points_before, points_after, reason, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+      [
+        driver.driver_id,
+        sponsorName,
+        numericAmount,
+        pointsBefore,
+        pointsAfter,
+        reason || "Sponsor Adjustment"
+      ]
+    );
 
+    await conn.commit();
+    res.json({ success: true });
   } catch (err) {
+    await conn.rollback();
     console.error("Point update error:", err);
     res.status(500).json({ error: "Database error" });
+  } finally {
+    conn.release();
   }
 });
 
@@ -1182,27 +1333,34 @@ app.get("/api/sponsor/drivers", async (req, res) => {
       return res.status(401).json({ error: "Not logged in" });
     }
 
-    const sponsorId = req.session.user.id;
+    if (req.session.user.role !== "Sponsor" || !req.session.user.sponsor) {
+      return res.status(403).json({ error: "Sponsors only" });
+    }
 
-    const [rows] = await pool.query(`
-      SELECT 
-        drivers.id AS driver_id,
-        users.id AS user_id,
-        users.first_name,
-        users.last_name,
-        users.email,
-        users.sponsor,
-        drivers.points
-      FROM drivers
-      JOIN users ON drivers.user_id = users.id
-      JOIN users AS sponsorUser ON sponsorUser.sponsor = users.sponsor
-      WHERE sponsorUser.id = ?
-        AND users.role = 'Driver'
-      ORDER BY users.last_name ASC, users.first_name ASC
-    `, [sponsorId]);
+    const sponsorName = req.session.user.sponsor;
+
+    const [rows] = await pool.query(
+      `SELECT
+         d.id AS driver_id,
+         u.id AS user_id,
+         u.first_name,
+         u.last_name,
+         u.email,
+         us.sponsor_name AS sponsor,
+         us.points
+       FROM user_sponsors us
+       JOIN users u
+         ON u.id = us.user_id
+       JOIN drivers d
+         ON d.user_id = u.id
+       WHERE us.sponsor_name = ?
+         AND us.status = 'Active'
+         AND u.role = 'Driver'
+       ORDER BY u.last_name ASC, u.first_name ASC`,
+      [sponsorName]
+    );
 
     res.json(rows);
-
   } catch (err) {
     console.error("SQL Connection Error:", err);
     res.status(500).json({ error: "Database error" });

@@ -118,7 +118,12 @@ function renderAll() {
 
 //Data load/save
 async function loadMeAndSchema() {
-  meCache = await getJSON("/api/me");
+  try {
+    meCache = await getJSON("/api/me");
+  } catch (err) {
+    meCache = { role: "Driver" };
+  }
+
   schemaCache = await getJSON("/api/application-schema");
   renderAll();
 }
@@ -212,6 +217,12 @@ function last4FromSSN(ssnRaw) {
   return digits.slice(-4);
 }
 
+function getSelectedSponsors() {
+  return Array.from(
+    document.querySelectorAll('input[name="sponsors"]:checked')
+  ).map(cb => cb.value);
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   const form = document.querySelector(".application-form");
   if (!form) return;
@@ -220,7 +231,12 @@ document.addEventListener("DOMContentLoaded", () => {
     e.preventDefault();
 
     const role = document.getElementById("role")?.value || "";
-    const sponsor = document.getElementById("sponsor")?.value || "";
+    const sponsors = role === "Driver" ? getSelectedSponsors() : [];
+
+    if (role === "Driver" && sponsors.length === 0) {
+      alert("Please select at least one sponsor.");
+      return;
+}
 
     const payload = {
       role,
@@ -232,7 +248,7 @@ document.addEventListener("DOMContentLoaded", () => {
       phone_number: document.getElementById("phone")?.value?.trim() || null,
 
       //Only relevant for Driver, send null for sponsor and admin applications
-      sponsor: role === "Driver" ? sponsor : null,
+      sponsors,
 
       ssn_last4: last4FromSSN(document.getElementById("ssn")?.value),
       age: Number(document.getElementById("age")?.value) || null,

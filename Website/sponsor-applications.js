@@ -95,15 +95,35 @@ function card(app) {
   `;
 
   div.querySelector('[data-action="approve"]').addEventListener("click", async () => {
-    if (!confirm(`Approve application ${safePlain(app.id)}? This will move them to users + drivers and remove from applications.`)) return;
-    await postJSON(`/api/sponsor/applications/${app.id}/approve`);
-    div.remove();
-  });
+      if (!confirm(`Approve application ${safePlain(app.id)}?`)) return;
+
+      try {
+        await postJSON(`/api/sponsor/applications/${app.id}/approve`);
+        alert("Application approved.");
+        div.remove();
+      } catch (err) {
+        console.error(err);
+        alert("Failed to approve application.");
+      }
+    });
 
   div.querySelector('[data-action="reject"]').addEventListener("click", async () => {
-    if (!confirm(`Reject application ${safePlain(app.id)}? This will delete it from applications.`)) return;
-    await postJSON(`/api/sponsor/applications/${app.id}/reject`);
-    div.remove();
+    const reason = prompt("Enter reason for rejection:");
+
+    if (!reason || !reason.trim()) {
+      alert("Rejection reason is required.");
+      return;
+    }
+
+    try {
+      await postJSON(`/api/sponsor/applications/${app.id}/reject`, { reason });
+
+      alert("Application rejected.");
+      div.remove();
+    } catch (err) {
+      console.error(err);
+      alert("Failed to reject application.");
+    }
   });
 
   return div;
