@@ -1,0 +1,4 @@
+D||Joe|Driver|me@email.com||
+S||Jill|Sponsor|jill@mail.com|100|New Driver
+D||Tom|Smith|tom887@gmail.com
+D||New|Driver|some@email.com
