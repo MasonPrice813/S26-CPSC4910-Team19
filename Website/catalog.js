@@ -1069,6 +1069,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   const createSponsorBtn = document.getElementById("createSponsorBtn");
   const sponsorDashboardBtn = document.getElementById("sponsorDashboardBtn");
   const hiddenItemsBtn = document.getElementById("hiddenItemsBtn");
+  const sponsorBulkLoadBtn = document.getElementById("sponsorBulkLoadBtn");
+
 
   const cartBtn = document.getElementById("cartBtn");
   const cartPanel = document.getElementById("cartPanel");
@@ -1262,6 +1264,10 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       sponsorDashboardBtn.addEventListener("click", () => {
         window.location.href = "/Website/sponsor-page.html";
+      });
+
+      sponsorBulkLoadBtn.addEventListener("click", () => {
+        window.location.href = "/Website/bulkload.html";
       });
 
       if (hiddenItemsBtn) {

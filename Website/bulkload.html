@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Catalog</title>
+<link rel="stylesheet" href="/Website/about-style.css">
+</head>
+
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-brand">Driver Incentive Program</div>
+        <div class="nav-actions">
+            <a href="sponsor-page.html" class="btn btn-secondary">Dashboard</a>
+            <a href="catalog.html" class="btn btn-secondary">Catalog</a>
+            <a href="profile.html" class="btn btn-primary">Profile</a>
+        </div>
+    </nav>
+    
+    <main class="container">
+
+    <!-- Header -->
+    <section class="header">
+        <h1 id="sponsorNameHeading" style="font-size: 42px;">Bulk Upload</h1>
+        <p class="subtitle">Sponsor Dashboard</p>
+    </section>
+
+    <section class="content-box">
+        <h2>Rules for Upload</h2>
+        <div>
+            <h3>File Format:<h3>
+            <p class="adminShowText muted" style="display:none;">&lt;type&gt;|organization name|first name|last name|email address|points|reason for points</p>
+            <p class="sponsorShowText muted" style="display:none;">&lt;type&gt;||first name|last name|email address|points|reason for points</p>
+            <p class="sponsorShowText muted" style="display:none;">Remember: There is no space between the 1st and 2nd pipe "|"</p>
+        </div>
+        <br>
+        <h2>Definitions</h2>
+        <table>
+            <tr>
+                <th>&lt;type&gt;</th>
+                <th>Data Type</th>
+            </tr>
+            <tr class="adminShowText" style="display:none;">
+                <td>O</td>
+                <td>Organization Name</td>
+            </tr>
+            <tr>
+                <td>D</td>
+                <td>Driver Information</td>
+            </tr>
+            <tr>
+                <td>S</td>
+                <td>Sponsor Information</td>
+            </tr>
+        </table>
+        <a href="" download="bulkUploadSample">
+            <button id="downloadSample" class="btn btn-primary adminShowText">Download Sample</button>
+            <button id="downloadSample" class="btn btn-primary sponsorShowText">Download Sample</button>
+        </a>
+        
+            
+    </section>
+
+
+    <footer class="footer">
+        <p>&copy; 2026 — Driver Incentive Program</p>
+    </footer>
+
+</main>
+<script src="/Website/bulkload.js"></script>
+</body>
+</html>
