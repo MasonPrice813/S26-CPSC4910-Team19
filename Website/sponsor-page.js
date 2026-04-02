@@ -581,9 +581,20 @@ async function approveApplication(applicationId) {
 }
 
 async function rejectApplication(applicationId) {
+  const reason = prompt("Enter reason for rejection:");
+
+  if (!reason || !reason.trim()) {
+    alert("Rejection reason is required.");
+    return;
+  }
+
   try {
     const response = await fetch(`/api/sponsor/applications/${applicationId}/reject`, {
-      method: "POST"
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ reason })
     });
 
     if (!response.ok) {

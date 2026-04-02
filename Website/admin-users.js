@@ -30,7 +30,10 @@ function rowHTML(u) {
             <div>
                 <div><strong>${esc(u.first_name)} ${esc(u.last_name)}</strong> <span class="muted">(#${u.id})</span></div>
                 <div class="muted small">${esc(u.username || "")} • ${esc(u.email || "")}</div>
-                <div class="muted small">Role: <strong>${esc(u.role)}</strong>${u.sponsor ? ` • Sponsor Org: ${esc(u.sponsor)}` : ""}</div>
+                <div class="muted small">
+                    Role: <strong>${esc(u.role)}</strong>
+                    ${u.sponsors ? ` • Sponsors: ${esc(u.sponsors)}` : ""}
+                </div>
             </div>
 
             <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
@@ -42,6 +45,20 @@ function rowHTML(u) {
                 <button class="btn btn-primary saveRoleBtn" data-id="${u.id}">Save Role</button>
                 <button class="btn btn-primary deleteBtn" data-id="${u.id}">Delete</button>
             </div>
+            ${u.role === "Driver" ? `
+                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:10px;">
+                    <select class="input addSponsorSelect" data-id="${u.id}">
+                    <option value="">Assign sponsor...</option>
+                    <option value="Sponsor 1">Sponsor 1</option>
+                    <option value="Sponsor 2">Sponsor 2</option>
+                    <option value="Sponsor 3">Sponsor 3</option>
+                    <option value="Sponsor 4">Sponsor 4</option>
+                    </select>
+                    <button class="btn btn-primary assignSponsorBtn" data-id="${u.id}">
+                    Add Sponsor
+                    </button>
+                </div>
+            ` : ""}
         </div>
         <p class="muted small" id="msg-${u.id}" style="margin-top:10px;"></p>
         </div>
@@ -180,43 +197,67 @@ document.addEventListener("DOMContentLoaded", async () => {
         const delBtn = e.target.closest(".deleteBtn");
 
         if (saveBtn) {
-        const id = saveBtn.dataset.id;
-        const sel = document.querySelector(`.roleSelect[data-id="${id}"]`);
-        const newRole = sel.value;
-        const msg = document.getElementById(`msg-${id}`);
-        msg.textContent = "Saving...";
+            const id = saveBtn.dataset.id;
+            const sel = document.querySelector(`.roleSelect[data-id="${id}"]`);
+            const newRole = sel.value;
+            const msg = document.getElementById(`msg-${id}`);
+            msg.textContent = "Saving...";
 
-        try {
-            await sendJSON(`/api/admin/users/${id}/role`, "PATCH", { role: newRole });
-            msg.textContent = "Role updated.";
-            await searchUsers(); // refresh list
-        } catch (err) {
-            msg.textContent = err.message || "Failed to update role.";
-        }
+            try {
+                await sendJSON(`/api/admin/users/${id}/role`, "PATCH", { role: newRole });
+                msg.textContent = "Role updated.";
+                await searchUsers(); // refresh list
+            } catch (err) {
+                msg.textContent = err.message || "Failed to update role.";
+            }
         }
 
         if (delBtn) {
-        const id = delBtn.dataset.id;
-        const ok = confirm("Delete this user? This cannot be undone.");
-        if (!ok) return;
+            const id = delBtn.dataset.id;
+            const ok = confirm("Delete this user? This cannot be undone.");
+            if (!ok) return;
 
-        const msg = document.getElementById(`msg-${id}`);
-        msg.textContent = "Deleting...";
+            const msg = document.getElementById(`msg-${id}`);
+            msg.textContent = "Deleting...";
 
-        try {
-            await fetch(`/api/admin/users/${id}`, { method: "DELETE", credentials: "same-origin" })
-            .then(async r => {
-                const data = await r.json().catch(() => ({}));
-                if (!r.ok) throw new Error(data?.error || "Delete failed");
-                return data;
-            });
+            try {
+                await fetch(`/api/admin/users/${id}`, { method: "DELETE", credentials: "same-origin" })
+                .then(async r => {
+                    const data = await r.json().catch(() => ({}));
+                    if (!r.ok) throw new Error(data?.error || "Delete failed");
+                    return data;
+                });
 
-            msg.textContent = "User deleted.";
-            await searchUsers();
-        } catch (err) {
-            msg.textContent = err.message || "Failed to delete user.";
+                msg.textContent = "User deleted.";
+                await searchUsers();
+            } catch (err) {
+                msg.textContent = err.message || "Failed to delete user.";
+            }
         }
+        const assignSponsorBtn = e.target.closest(".assignSponsorBtn");
+
+        if (assignSponsorBtn) {
+            const id = assignSponsorBtn.dataset.id;
+            const sel = document.querySelector(`.addSponsorSelect[data-id="${id}"]`);
+            const sponsorName = sel?.value;
+            const msg = document.getElementById(`msg-${id}`);
+
+            if (!sponsorName) {
+                msg.textContent = "Please select a sponsor.";
+                return;
+            }
+
+            msg.textContent = "Assigning sponsor...";
+
+            try {
+                await sendJSON(`/api/admin/users/${id}/sponsors`, "POST", { sponsor_name: sponsorName });
+                msg.textContent = "Sponsor assigned.";
+                await searchUsers();
+            } catch (err) {
+                msg.textContent = err.message || "Failed to assign sponsor.";
+            }
         }
+
     });
 
     // initial load

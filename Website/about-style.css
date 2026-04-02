@@ -510,3 +510,30 @@ textarea{
 .history-item {
   padding: 8px 0;
 }
+
+#sponsorGroup {
+  display: block;
+}
+
+.sponsor-option {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  margin: 8px 0;
+}
+
+#sponsorGroup .sponsor-option input[type="checkbox"] {
+  width: auto;
+  padding: 0;
+  margin: 0;
+  transform: scale(1.2);
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+#sponsorGroup .sponsor-option label {
+  margin: 0;
+  width: auto;
+  cursor: pointer;
+}
