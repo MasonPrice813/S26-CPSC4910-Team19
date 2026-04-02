@@ -114,6 +114,55 @@ async function loadTransactions() {
   }
 }
 
+async function loadDriverSponsorAffiliations() {
+  const tbody = document.getElementById("driverSponsorsTableBody");
+  if (!tbody) return;
+
+  tbody.innerHTML = `
+    <tr>
+      <td colspan="3" style="padding:12px 10px;" class="muted">Loading driver sponsor affiliations...</td>
+    </tr>
+  `;
+
+  try {
+    const rows = await getJSON("/api/admin/driver-sponsors");
+
+    if (!rows.length) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="3" style="padding:12px 10px;" class="muted">No driver sponsor affiliations found.</td>
+        </tr>
+      `;
+      return;
+    }
+
+    tbody.innerHTML = "";
+
+    rows.forEach(row => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td style="padding:12px 10px; border-bottom:1px solid rgba(255,255,255,0.10);">
+          ${esc(row.first_name)} ${esc(row.last_name)}
+        </td>
+        <td style="padding:12px 10px; border-bottom:1px solid rgba(255,255,255,0.10);">
+          ${esc(row.email)}
+        </td>
+        <td style="padding:12px 10px; border-bottom:1px solid rgba(255,255,255,0.10);">
+          ${esc(row.sponsors || "—")}
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+  } catch (err) {
+    console.error(err);
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="3" style="padding:12px 10px;" class="muted">Failed to load driver sponsor affiliations.</td>
+      </tr>
+    `;
+  }
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
   loadMe().catch(console.warn);
 
@@ -138,6 +187,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     await loadSponsors();
     await loadDrivers();
     await loadTransactions();
+    await loadDriverSponsorAffiliations();
   } catch (err) {
     console.error(err);
     document.getElementById("statusMsg").textContent = "Failed to initialize admin reports.";

@@ -1019,9 +1019,15 @@ app.get("/api/admin/users", requireAdmin, async (req, res) => {
         u.username,
         u.email,
         u.phone_number,
-        u.sponsor
+        u.sponsor,
+        GROUP_CONCAT(DISTINCT us.sponsor_name ORDER BY us.sponsor_name SEPARATOR ', ') AS sponsors
       FROM users u
+      LEFT JOIN user_sponsors us
+        ON us.user_id = u.id
+      AND us.status = 'Active'
       ${whereSql}
+      GROUP BY
+        u.id, u.role, u.first_name, u.last_name, u.username, u.email, u.phone_number, u.sponsor
       ORDER BY u.last_name ASC, u.first_name ASC
       LIMIT 200
       `,
@@ -2505,16 +2511,17 @@ app.get('/api/admin/transactions', async (req, res) => {
         u.id AS user_id,
         u.first_name,
         u.last_name,
-        u.sponsor
+        o.sponsor_name AS sponsor
       FROM orders o
-      JOIN users u ON o.user_id = u.id
+      JOIN users u
+        ON o.user_id = u.id
       WHERE u.role = 'Driver'
     `;
 
     const params = [];
 
     if (sponsor) {
-      query += ` AND u.sponsor = ?`;
+      query += ` AND o.sponsor_name = ?`;
       params.push(sponsor);
     }
 
@@ -2545,11 +2552,11 @@ app.get('/api/admin/sponsors', async (req, res) => {
 
   try {
     const [rows] = await pool.query(`
-      SELECT DISTINCT sponsor
-      FROM users
-      WHERE sponsor IS NOT NULL
-        AND sponsor <> ''
-      ORDER BY sponsor ASC
+      SELECT DISTINCT sponsor_name AS sponsor
+      FROM user_sponsors
+      WHERE sponsor_name IS NOT NULL
+        AND sponsor_name <> ''
+      ORDER BY sponsor_name ASC
     `);
 
     res.json(rows);
@@ -2568,18 +2575,27 @@ app.get('/api/admin/drivers', async (req, res) => {
 
   try {
     let query = `
-      SELECT id AS user_id, first_name, last_name, sponsor
-      FROM users
-      WHERE role = 'Driver'
+      SELECT DISTINCT
+        u.id AS user_id,
+        u.first_name,
+        u.last_name,
+        u.email
+      FROM users u
+      JOIN drivers d
+        ON d.user_id = u.id
+      LEFT JOIN user_sponsors us
+        ON us.user_id = u.id
+       AND us.status = 'Active'
+      WHERE u.role = 'Driver'
     `;
     const params = [];
 
     if (sponsor) {
-      query += ` AND sponsor = ?`;
+      query += ` AND us.sponsor_name = ?`;
       params.push(sponsor);
     }
 
-    query += ` ORDER BY last_name ASC, first_name ASC`;
+    query += ` ORDER BY u.last_name ASC, u.first_name ASC`;
 
     const [rows] = await pool.query(query, params);
     res.json(rows);
@@ -2588,6 +2604,7 @@ app.get('/api/admin/drivers', async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 });
+
 app.get("/api/sponsor/settings", requireSponsor, async (req, res) => {
   try {
     const [rows] = await pool.query(
@@ -2718,6 +2735,91 @@ app.get("/api/sponsor/dashboard-summary", requireSponsor, async (req, res) => {
   } catch (err) {
     console.error("sponsor dashboard summary error:", err);
     res.status(500).json({ error: "Database error" });
+  }
+});
+
+app.get("/api/admin/driver-sponsors", requireAdmin, async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `
+      SELECT
+        u.id AS user_id,
+        u.first_name,
+        u.last_name,
+        u.email,
+        GROUP_CONCAT(DISTINCT us.sponsor_name ORDER BY us.sponsor_name SEPARATOR ', ') AS sponsors
+      FROM users u
+      JOIN drivers d
+        ON d.user_id = u.id
+      LEFT JOIN user_sponsors us
+        ON us.user_id = u.id
+       AND us.status = 'Active'
+      WHERE u.role = 'Driver'
+      GROUP BY u.id, u.first_name, u.last_name, u.email
+      ORDER BY u.last_name ASC, u.first_name ASC
+      `
+    );
+
+    res.json(rows);
+  } catch (err) {
+    console.error("admin driver sponsors error:", err);
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
+app.post("/api/admin/users/:id/sponsors", requireAdmin, async (req, res) => {
+  const userId = Number(req.params.id);
+  const sponsorName = String(req.body?.sponsor_name || "").trim();
+
+  if (!Number.isFinite(userId)) {
+    return res.status(400).json({ error: "Invalid user id" });
+  }
+
+  if (!sponsorName) {
+    return res.status(400).json({ error: "Sponsor name is required." });
+  }
+
+  const allowedSponsors = new Set(["Sponsor 1", "Sponsor 2", "Sponsor 3", "Sponsor 4"]);
+  if (!allowedSponsors.has(sponsorName)) {
+    return res.status(400).json({ error: "Invalid sponsor name." });
+  }
+
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    const [rows] = await conn.query(
+      `SELECT id, role
+       FROM users
+       WHERE id = ?
+       FOR UPDATE`,
+      [userId]
+    );
+
+    if (rows.length === 0) {
+      await conn.rollback();
+      return res.status(404).json({ error: "User not found." });
+    }
+
+    if (rows[0].role !== "Driver") {
+      await conn.rollback();
+      return res.status(400).json({ error: "Only drivers can be assigned to sponsors." });
+    }
+
+    await conn.query(
+      `INSERT IGNORE INTO user_sponsors (user_id, sponsor_name, points, status)
+       VALUES (?, ?, 0, 'Active')`,
+      [userId, sponsorName]
+    );
+
+    await conn.commit();
+    res.json({ ok: true });
+  } catch (err) {
+    await conn.rollback();
+    console.error("admin assign sponsor error:", err);
+    res.status(500).json({ error: "Could not assign sponsor." });
+  } finally {
+    conn.release();
   }
 });
 
