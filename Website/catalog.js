@@ -1330,6 +1330,16 @@ document.addEventListener("DOMContentLoaded", async () => {
     const sponsorText = me.sponsor ? ` • ${me.sponsor}` : "";
     meBadge.textContent = `Logged in as: ${me.role}${sponsorText}`;
 
+    if (notificationsBtn) {
+      notificationsBtn.style.display = "inline-block";
+
+      notificationsBtn.addEventListener("click", () => {
+        window.location.href = "/Website/notifications.html";
+    });
+
+  await loadNotificationCount();
+}
+
     if (me.role === "Admin") {
       manageUsersBtn.style.display = "inline-block";
       manageUsersBtn.addEventListener("click", () => {
