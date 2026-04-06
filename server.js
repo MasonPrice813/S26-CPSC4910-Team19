@@ -1249,6 +1249,83 @@ app.get("/api/points", async (req, res) => {
   }
 });
 
+async function applySponsorPointChange(conn, {
+  sponsorName,
+  driverId,
+  amount,
+  reason
+}) {
+  const numericAmount = Number(amount);
+  if (!Number.isFinite(numericAmount)) {
+    throw new Error("Invalid points amount");
+  }
+
+  const [[driver]] = await conn.query(
+    `SELECT
+       d.id AS driver_id,
+       d.user_id,
+       us.points
+     FROM drivers d
+     JOIN user_sponsors us
+       ON us.user_id = d.user_id
+     WHERE d.id = ?
+       AND us.sponsor_name = ?
+       AND us.status = 'Active'
+     LIMIT 1
+     FOR UPDATE`,
+    [driverId, sponsorName]
+  );
+
+  if (!driver) {
+    throw new Error("Driver not found for this sponsor");
+  }
+
+  const [[settings]] = await conn.query(
+    `SELECT allow_negative
+     FROM sponsor_settings
+     WHERE sponsor = ?
+     LIMIT 1`,
+    [sponsorName]
+  );
+
+  const allowNegative = settings ? !!settings.allow_negative : false;
+  const pointsBefore = Number(driver.points || 0);
+  const pointsAfter = pointsBefore + numericAmount;
+
+  if (!allowNegative && pointsAfter < 0) {
+    throw new Error("This sponsor does not allow negative point balances.");
+  }
+
+  await conn.query(
+    `UPDATE user_sponsors
+     SET points = ?
+     WHERE user_id = ?
+       AND sponsor_name = ?`,
+    [pointsAfter, driver.user_id, sponsorName]
+  );
+
+  await conn.query(
+    `INSERT INTO driver_point_history
+       (driver_id, sponsor_name, points_change, points_before, points_after, reason, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+    [
+      driver.driver_id,
+      sponsorName,
+      numericAmount,
+      pointsBefore,
+      pointsAfter,
+      reason || "Sponsor Adjustment"
+    ]
+  );
+
+  return {
+    driver_id: driver.driver_id,
+    user_id: driver.user_id,
+    pointsBefore,
+    pointsAfter
+  };
+}
+
 app.post("/api/points/update", async (req, res) => {
   const conn = await pool.getConnection();
 
@@ -1268,81 +1345,21 @@ app.post("/api/points/update", async (req, res) => {
       return res.status(400).json({ error: "Missing data" });
     }
 
-    const numericAmount = Number(amount);
-    if (!Number.isFinite(numericAmount)) {
-      return res.status(400).json({ error: "Invalid points amount" });
-    }
-
     await conn.beginTransaction();
 
-    const [[driver]] = await conn.query(
-      `SELECT
-         d.id AS driver_id,
-         d.user_id,
-         us.points
-       FROM drivers d
-       JOIN user_sponsors us
-         ON us.user_id = d.user_id
-       WHERE d.id = ?
-         AND us.sponsor_name = ?
-         AND us.status = 'Active'
-       LIMIT 1
-       FOR UPDATE`,
-      [driverId, sponsorName]
-    );
-
-    if (!driver) {
-      await conn.rollback();
-      return res.status(404).json({ error: "Driver not found for this sponsor" });
-    }
-
-    const [[settings]] = await conn.query(
-      `SELECT allow_negative
-       FROM sponsor_settings
-       WHERE sponsor = ?
-       LIMIT 1`,
-      [sponsorName]
-    );
-
-    const allowNegative = settings ? !!settings.allow_negative : false;
-    const pointsBefore = Number(driver.points || 0);
-    const pointsAfter = pointsBefore + numericAmount;
-
-    if (!allowNegative && pointsAfter < 0) {
-      await conn.rollback();
-      return res.status(400).json({
-        error: "This sponsor does not allow negative point balances."
-      });
-    }
-
-    await conn.query(
-      `UPDATE user_sponsors
-       SET points = ?
-       WHERE user_id = ?
-         AND sponsor_name = ?`,
-      [pointsAfter, driver.user_id, sponsorName]
-    );
-
-    await conn.query(
-      `INSERT INTO driver_point_history
-         (driver_id, sponsor_name, points_change, points_before, points_after, reason, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, NOW())`,
-      [
-        driver.driver_id,
-        sponsorName,
-        numericAmount,
-        pointsBefore,
-        pointsAfter,
-        reason || "Sponsor Adjustment"
-      ]
-    );
+    await applySponsorPointChange(conn, {
+      sponsorName,
+      driverId: Number(driverId),
+      amount: Number(amount),
+      reason: reason || "Sponsor Adjustment"
+    });
 
     await conn.commit();
     res.json({ success: true });
   } catch (err) {
     await conn.rollback();
     console.error("Point update error:", err);
-    res.status(500).json({ error: "Database error" });
+    res.status(500).json({ error: err.message || "Database error" });
   } finally {
     conn.release();
   }
@@ -1388,31 +1405,60 @@ app.get("/api/sponsor/drivers", async (req, res) => {
   }
 });
 
-app.post('/api/recurring/start', async (req, res) => {
-  const {amount, interval, targetType, targetIds, reason} = req.body;
+app.post("/api/recurring/start", requireSponsor, async (req, res) => {
+  const { amount, interval, targetType, targetIds, reason } = req.body || {};
+  const sponsorName = req.session.user.sponsor;
 
-  await pool.query(
-    `INSERT INTO RecurringPoints 
-     (points_amount, interval_type, target_type, target_ids, reason, is_active)
-     VALUES (?, ?, ?, ?, ?, true)`,
-    [
-      amount,
-      interval,
-      targetType,
-      targetType === 'specific' ? JSON.stringify(targetIds) : null,
-      reason
-    ]
-  );
+  if (!sponsorName) {
+    return res.status(400).json({ error: "Missing sponsor context." });
+  }
 
-  res.sendStatus(200);
+  if (!Number.isFinite(Number(amount))) {
+    return res.status(400).json({ error: "Invalid amount." });
+  }
+
+  if (!["daily", "weekly"].includes(interval)) {
+    return res.status(400).json({ error: "Invalid interval." });
+  }
+
+  if (!["all", "specific"].includes(targetType)) {
+    return res.status(400).json({ error: "Invalid target type." });
+  }
+
+  if (!reason || !String(reason).trim()) {
+    return res.status(400).json({ error: "Reason is required." });
+  }
+
+  try {
+    await pool.query(
+      `INSERT INTO RecurringPoints
+         (sponsor_name, points_amount, interval_type, target_type, target_ids, reason, is_active)
+       VALUES (?, ?, ?, ?, ?, ?, true)`,
+      [
+        sponsorName,
+        Number(amount),
+        interval,
+        targetType,
+        targetType === "specific" ? JSON.stringify(targetIds || []) : null,
+        String(reason).trim()
+      ]
+    );
+
+    res.sendStatus(200);
+  } catch (err) {
+    console.error("recurring start error:", err);
+    res.status(500).json({ error: "Could not start recurring points." });
+  }
 });
 
-app.get("/api/recurring/active", async (req, res) => {
+app.get("/api/recurring/active", requireSponsor, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT id, points_amount, interval_type, target_type, target_ids
+      `SELECT id, sponsor_name, points_amount, interval_type, target_type, target_ids
        FROM RecurringPoints
-       WHERE is_active = true`
+       WHERE is_active = true
+         AND sponsor_name = ?`,
+      [req.session.user.sponsor]
     );
 
     res.json(rows);
@@ -1422,15 +1468,23 @@ app.get("/api/recurring/active", async (req, res) => {
   }
 });
 
-app.post('/api/recurring/stop', async (req, res) => {
-  const {id} = req.body;
+app.post("/api/recurring/stop", requireSponsor, async (req, res) => {
+  const { id } = req.body || {};
 
-  await pool.query(
-    `UPDATE RecurringPoints SET is_active = false WHERE id = ?`,
-    [id]
-  );
+  try {
+    await pool.query(
+      `UPDATE RecurringPoints
+       SET is_active = false
+       WHERE id = ?
+         AND sponsor_name = ?`,
+      [id, req.session.user.sponsor]
+    );
 
-  res.sendStatus(200);
+    res.sendStatus(200);
+  } catch (err) {
+    console.error("recurring stop error:", err);
+    res.status(500).json({ error: "Could not stop recurring process." });
+  }
 });
 
 function shouldRun(rule, now) {
@@ -1465,31 +1519,58 @@ cron.schedule('* * * * *', async () => {
 });
 
 async function applyPointsToDrivers(rule) {
-  let drivers;
-  if (rule.target_type === 'all') {
-    const [rows] = await pool.query(`SELECT id FROM drivers`);
+  const sponsorName = rule.sponsor_name;
+  if (!sponsorName) return;
+
+  let drivers = [];
+
+  if (rule.target_type === "all") {
+    const [rows] = await pool.query(
+      `SELECT d.id
+       FROM drivers d
+       JOIN user_sponsors us
+         ON us.user_id = d.user_id
+       WHERE us.sponsor_name = ?
+         AND us.status = 'Active'`,
+      [sponsorName]
+    );
     drivers = rows;
-  } 
-  else {
-    const ids = JSON.parse(rule.target_ids);
-    if (!ids || ids.length === 0) return;
+  } else {
+    const ids = JSON.parse(rule.target_ids || "[]");
+    if (!Array.isArray(ids) || ids.length === 0) return;
 
     const [rows] = await pool.query(
-      `SELECT id FROM drivers WHERE id IN (?)`,
-      [ids]
+      `SELECT d.id
+       FROM drivers d
+       JOIN user_sponsors us
+         ON us.user_id = d.user_id
+       WHERE d.id IN (?)
+         AND us.sponsor_name = ?
+         AND us.status = 'Active'`,
+      [ids, sponsorName]
     );
     drivers = rows;
   }
 
   for (const driver of drivers) {
-    await pool.query(
-      `CALL update_driver_points(?, ?, ?)`,
-      [
-        driver.id,
-        rule.points_amount,
-        rule.reason 
-      ]
-    );
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+
+      await applySponsorPointChange(conn, {
+        sponsorName,
+        driverId: Number(driver.id),
+        amount: Number(rule.points_amount),
+        reason: rule.reason || "Recurring Points"
+      });
+
+      await conn.commit();
+    } catch (err) {
+      await conn.rollback();
+      console.error(`Recurring points failed for driver ${driver.id}:`, err);
+    } finally {
+      conn.release();
+    }
   }
 }
 
