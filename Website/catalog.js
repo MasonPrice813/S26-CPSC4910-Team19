@@ -31,7 +31,7 @@ let ACTIVE_ADMIN_SPONSOR = null;
 
 let HIDDEN_PRODUCT_IDS = new Set();
 
-const POINTS_PER_DOLLAR = 10; // 10 points = $1
+let POINTS_PER_DOLLAR = 10;
 
 function dollarsToPoints(priceDollars) {
   const p = Number(priceDollars);
@@ -469,6 +469,22 @@ function renderRecommendedProducts() {
 
     grid.appendChild(card);
   });
+}
+
+async function loadPointsPerDollarRatio() {
+  try {
+    let url = "/api/catalog/points-ratio";
+
+    if (CURRENT_USER_ROLE === "Driver" && ACTIVE_DRIVER_SPONSOR) {
+      url += `?sponsor=${encodeURIComponent(ACTIVE_DRIVER_SPONSOR)}`;
+    }
+
+    const data = await getJSON(url);
+    POINTS_PER_DOLLAR = Number(data?.pointsPerDollar || 10);
+  } catch (err) {
+    console.error("Failed to load points ratio:", err);
+    POINTS_PER_DOLLAR = 10;
+  }
 }
 
 async function loadRecommendations() {
@@ -1202,9 +1218,12 @@ function renderCatalogSponsorDropdown() {
     select.value = ACTIVE_DRIVER_SPONSOR || "";
     refreshActiveDriverSponsorPoints();
 
-    select.onchange = () => {
+    select.onchange = async () => {
       ACTIVE_DRIVER_SPONSOR = select.value || null;
       saveActiveDriverSponsor(ACTIVE_DRIVER_SPONSOR);
+
+      await loadPointsPerDollarRatio();
+
       refreshActiveDriverSponsorPoints();
       loadCart();
       updateCartBadge();
@@ -1299,6 +1318,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     } else {
       CURRENT_USER_POINTS = Number(me.points || 0);
     }
+
+    await loadPointsPerDollarRatio();
 
     if (CURRENT_USER_ROLE === "Driver") {
       updatePointsDisplay();

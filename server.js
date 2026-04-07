@@ -3165,7 +3165,7 @@ app.get("/api/admin/points", requireAdmin, async (req, res) => {
 app.get("/api/sponsor/settings", requireSponsor, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT points_criteria, allow_negative
+      `SELECT points_criteria, allow_negative, points_per_dollar
        FROM sponsor_settings
        WHERE sponsor = ?
        LIMIT 1`,
@@ -3175,13 +3175,15 @@ app.get("/api/sponsor/settings", requireSponsor, async (req, res) => {
     if (!rows.length) {
       return res.json({
         pointsCriteria: "",
-        allowNegative: false
+        allowNegative: false,
+        pointsPerDollar: 10
       });
     }
 
     res.json({
       pointsCriteria: rows[0].points_criteria || "",
-      allowNegative: !!rows[0].allow_negative
+      allowNegative: !!rows[0].allow_negative,
+      pointsPerDollar: Number(rows[0].points_per_dollar || 10)
     });
   } catch (err) {
     console.error("sponsor settings load error:", err);
@@ -3194,18 +3196,55 @@ app.post("/api/sponsor/settings", requireSponsor, async (req, res) => {
     const pointsCriteria = String(req.body?.pointsCriteria || "");
     const allowNegative = !!req.body?.allowNegative;
 
+    const pointsPerDollar = Number(req.body?.pointsPerDollar);
+    if (!Number.isInteger(pointsPerDollar) || pointsPerDollar <= 0) {
+      return res.status(400).json({ error: "Points per dollar must be a positive whole number." });
+    }
+
     await pool.query(
-      `INSERT INTO sponsor_settings (sponsor, points_criteria, allow_negative)
-       VALUES (?, ?, ?)
+      `INSERT INTO sponsor_settings (sponsor, points_criteria, allow_negative, points_per_dollar)
+       VALUES (?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE
          points_criteria = VALUES(points_criteria),
-         allow_negative = VALUES(allow_negative)`,
-      [req.me.sponsor, pointsCriteria, allowNegative]
+         allow_negative = VALUES(allow_negative),
+         points_per_dollar = VALUES(points_per_dollar)`,
+      [req.me.sponsor, pointsCriteria, allowNegative, pointsPerDollar]
     );
 
     res.json({ ok: true });
   } catch (err) {
     console.error("sponsor settings save error:", err);
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
+app.get("/api/catalog/points-ratio", requireLogin, async (req, res) => {
+  try {
+    let sponsorName = null;
+
+    if (req.session.user.role === "Sponsor") {
+      sponsorName = req.session.user.sponsor || null;
+    } else if (req.session.user.role === "Driver") {
+      sponsorName = String(req.query.sponsor || "").trim() || null;
+    }
+
+    if (!sponsorName) {
+      return res.json({ pointsPerDollar: 10 });
+    }
+
+    const [rows] = await pool.query(
+      `SELECT points_per_dollar
+       FROM sponsor_settings
+       WHERE sponsor = ?
+       LIMIT 1`,
+      [sponsorName]
+    );
+
+    res.json({
+      pointsPerDollar: rows.length ? Number(rows[0].points_per_dollar || 10) : 10
+    });
+  } catch (err) {
+    console.error("catalog points ratio error:", err);
     res.status(500).json({ error: "Database error" });
   }
 });
