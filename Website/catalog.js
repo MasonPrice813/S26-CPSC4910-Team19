@@ -26,6 +26,9 @@ let CURRENT_USER_SPONSOR = null;
 let DRIVER_SPONSORS = [];
 let ACTIVE_DRIVER_SPONSOR = null;
 
+let ADMIN_SPONSORS = [];
+let ACTIVE_ADMIN_SPONSOR = null;
+
 let HIDDEN_PRODUCT_IDS = new Set();
 
 const POINTS_PER_DOLLAR = 10; // 10 points = $1
@@ -847,7 +850,15 @@ async function loadNotificationCount() {
 
 async function loadHiddenProductIds() {
   try {
-    const data = await getJSON("/api/catalog/hidden-product-ids");
+    const sponsor = getEffectiveCatalogSponsor();
+
+    if (!sponsor) {
+      HIDDEN_PRODUCT_IDS = new Set();
+      return;
+    }
+
+    const url = `/api/catalog/hidden-product-ids?sponsor=${encodeURIComponent(sponsor)}`;
+    const data = await getJSON(url);
     const ids = Array.isArray(data?.productIds) ? data.productIds.map(Number) : [];
     HIDDEN_PRODUCT_IDS = new Set(ids);
   } catch (err) {
@@ -1135,6 +1146,108 @@ async function setupAdminButton() {
   }
 }
 
+function getSavedActiveAdminSponsor() {
+  if (!CURRENT_USER_ID) return null;
+  return localStorage.getItem(`activeAdminCatalogSponsor_${CURRENT_USER_ID}`);
+}
+
+function saveActiveAdminSponsor(sponsorName) {
+  if (!CURRENT_USER_ID) return;
+  localStorage.setItem(`activeAdminCatalogSponsor_${CURRENT_USER_ID}`, sponsorName || "");
+}
+
+async function loadAdminSponsors() {
+  const data = await getJSON("/api/admin/sponsors");
+  ADMIN_SPONSORS = Array.isArray(data) ? data.map(row => row.sponsor).filter(Boolean) : [];
+  return ADMIN_SPONSORS;
+}
+
+function getEffectiveCatalogSponsor() {
+  if (CURRENT_USER_ROLE === "Driver") return ACTIVE_DRIVER_SPONSOR || null;
+  if (CURRENT_USER_ROLE === "Sponsor") return CURRENT_USER_SPONSOR || null;
+  if (CURRENT_USER_ROLE === "Admin") return ACTIVE_ADMIN_SPONSOR || null;
+  return null;
+}
+
+function renderCatalogSponsorDropdown() {
+  const wrap = document.getElementById("catalogSponsorPickerWrap");
+  const select = document.getElementById("catalogSponsorSelect");
+  const label = document.getElementById("catalogSponsorLabel");
+
+  if (!wrap || !select || !label) return;
+
+  wrap.style.display = "none";
+  select.innerHTML = "";
+
+  if (CURRENT_USER_ROLE === "Driver") {
+    if (!DRIVER_SPONSORS.length) return;
+
+    wrap.style.display = "block";
+    label.textContent = "Active Sponsor";
+
+    DRIVER_SPONSORS.forEach((row) => {
+      const opt = document.createElement("option");
+      opt.value = row.sponsor_name;
+      opt.textContent = `${row.sponsor_name} (${Number(row.points || 0)} pts)`;
+      select.appendChild(opt);
+    });
+
+    const saved = getSavedActiveDriverSponsor();
+    const validSaved = DRIVER_SPONSORS.some((s) => s.sponsor_name === saved);
+
+    ACTIVE_DRIVER_SPONSOR = validSaved
+      ? saved
+      : DRIVER_SPONSORS[0]?.sponsor_name || null;
+
+    select.value = ACTIVE_DRIVER_SPONSOR || "";
+    refreshActiveDriverSponsorPoints();
+
+    select.onchange = () => {
+      ACTIVE_DRIVER_SPONSOR = select.value || null;
+      saveActiveDriverSponsor(ACTIVE_DRIVER_SPONSOR);
+      refreshActiveDriverSponsorPoints();
+      loadCart();
+      updateCartBadge();
+      renderCartPanel();
+      currentPage = 1;
+      applyFilters();
+    };
+
+    return;
+  }
+
+  if (CURRENT_USER_ROLE === "Admin") {
+    if (!ADMIN_SPONSORS.length) return;
+
+    wrap.style.display = "block";
+    label.textContent = "View Sponsor Catalog";
+
+    ADMIN_SPONSORS.forEach((sponsorName) => {
+      const opt = document.createElement("option");
+      opt.value = sponsorName;
+      opt.textContent = sponsorName;
+      select.appendChild(opt);
+    });
+
+    const saved = getSavedActiveAdminSponsor();
+    ACTIVE_ADMIN_SPONSOR = ADMIN_SPONSORS.includes(saved)
+      ? saved
+      : ADMIN_SPONSORS[0] || null;
+
+    select.value = ACTIVE_ADMIN_SPONSOR || "";
+
+    select.onchange = async () => {
+      ACTIVE_ADMIN_SPONSOR = select.value || null;
+      saveActiveAdminSponsor(ACTIVE_ADMIN_SPONSOR);
+      await loadHiddenProductIds();
+      currentPage = 1;
+      applyFilters();
+    };
+
+    return;
+  }
+}
+
 setupAdminButton();
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -1177,8 +1290,12 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     if (CURRENT_USER_ROLE === "Driver") {
       await loadDriverSponsors();
-      renderDriverSponsorDropdown();
+      renderCatalogSponsorDropdown();
       loadCart();
+    } else if (CURRENT_USER_ROLE === "Admin") {
+      await loadAdminSponsors();
+      renderCatalogSponsorDropdown();
+      CURRENT_USER_POINTS = 0;
     } else {
       CURRENT_USER_POINTS = Number(me.points || 0);
     }

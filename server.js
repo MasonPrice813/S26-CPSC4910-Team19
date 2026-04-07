@@ -2602,7 +2602,13 @@ app.post("/api/notifications/read-all", requireLogin, async (req, res) => {
 app.get("/api/catalog/hidden-product-ids", requireLogin, async (req, res) => {
   try {
     const me = req.session.user;
-    const sponsor = me.sponsor || null;
+    let sponsor = null;
+
+    if (me.role === "Admin") {
+      sponsor = String(req.query.sponsor || "").trim() || null;
+    } else {
+      sponsor = me.sponsor || null;
+    }
 
     if (!sponsor) {
       return res.json({ productIds: [] });
