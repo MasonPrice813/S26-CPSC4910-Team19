@@ -1162,6 +1162,123 @@ app.delete("/api/admin/users/:id", requireAdmin, async (req, res) => {
   }
 });
 
+app.get('/api/admin/audit-logs', (req, res, next) => next(), async (req, res) => {
+  try {
+    const {
+      event_type,
+      sponsor,
+      status,
+      date_from,
+      date_to,
+      search,
+    } = req.query;
+
+    const page   = Math.max(1,   parseInt(req.query.page,  10) || 1);
+    const limit  = Math.min(200, parseInt(req.query.limit, 10) || 50);
+    const offset = (page - 1) * limit;
+
+    const VALID_EVENT_TYPES = new Set([
+      'login', 'login_failed', 'logout',
+      'purchase', 'driver_application', 'account_created',
+    ]);
+    const VALID_STATUSES = new Set(['success', 'failure', 'pending']);
+
+    const conditions = [];
+    const params     = [];
+
+    if (event_type && VALID_EVENT_TYPES.has(event_type)) {
+      conditions.push('al.event_type = ?');
+      params.push(event_type);
+    }
+    if (sponsor && typeof sponsor === 'string' && sponsor.trim()) {
+      conditions.push('al.sponsor_name = ?');
+      params.push(sponsor.trim());
+    }
+    if (status && VALID_STATUSES.has(status)) {
+      conditions.push('al.status = ?');
+      params.push(status);
+    }
+    if (date_from) {
+      conditions.push('al.created_at >= ?');
+      params.push(new Date(date_from + 'T00:00:00'));
+    }
+    if (date_to) {
+      conditions.push('al.created_at <= ?');
+      params.push(new Date(date_to + 'T23:59:59'));
+    }
+    if (search && typeof search === 'string' && search.trim()) {
+      conditions.push('(al.description LIKE ? OR al.user_email LIKE ?)');
+      const like = `%${search.trim().slice(0, 100)}%`;
+      params.push(like, like);
+    }
+
+    const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
+
+    // Total count
+    const [[{ total }]] = await pool.query(
+      `SELECT COUNT(*) AS total FROM audit_logs al ${where}`,
+      params
+    );
+
+    // Page of rows — parse metadata JSON so the client gets a real object
+    const [rows] = await pool.query(
+      `SELECT
+         al.id,
+         al.event_type,
+         al.description,
+         al.status,
+         al.sponsor_name,
+         al.ip_address,
+         al.created_at,
+         al.metadata,
+         al.user_id,
+         COALESCE(u.email,      al.user_email) AS user_email,
+         COALESCE(u.role,       al.user_role)  AS user_role,
+         CONCAT(COALESCE(u.first_name,''), ' ', COALESCE(u.last_name,'')) AS user_name
+       FROM audit_logs al
+       LEFT JOIN users u ON u.id = al.user_id
+       ${where}
+       ORDER BY al.created_at DESC
+       LIMIT ? OFFSET ?`,
+      [...params, limit, offset]
+    );
+
+    // Parse metadata string → object for each row
+    const data = rows.map(r => ({
+      ...r,
+      metadata: r.metadata
+        ? (typeof r.metadata === 'string' ? JSON.parse(r.metadata) : r.metadata)
+        : null,
+    }));
+
+    res.json({
+      data,
+      pagination: { total, page, limit, pages: Math.ceil(total / limit) },
+    });
+  } catch (err) {
+    console.error('audit-logs GET error:', err);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+
+// ── GET /api/admin/audit-logs/sponsors ───────────────────────
+app.get('/api/admin/audit-logs/sponsors', (req, res, next) => next(), async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT DISTINCT sponsor_name
+       FROM user_sponsors
+       WHERE sponsor_name IS NOT NULL
+         AND sponsor_name != ''
+       ORDER BY sponsor_name ASC`
+    );
+    res.json(rows.map(r => r.sponsor_name));
+  } catch (err) {
+    console.error('audit-logs sponsors error:', err);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
 // Getting data from the graph in week, month, year spans for each driver and average
 app.get("/api/points", async (req, res) => {
   try {
