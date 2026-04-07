@@ -55,16 +55,29 @@
             </tr>
         </table>
         <br>
-        <a href="/TextSample/adminBulkLoadSample.txt" download="bulkUploadSample" class="adminShowText" style="display:none;">
-            <button class="btn btn-primary">Download Sample</button>
+        <a href="/TextSample/adminBulkLoadSample.txt" download="bulkUploadSample" class="btn btn-primary btn-equal adminShowText" style="display:none;">
+            Download Sample
         </a>
-        <a href="/TextSample/sponsorBulkLoadSample.txt" download="bulkUploadSample" class="sponsorShowText" style="display:none;">
-            <button class="btn btn-primary">Download Sample</button>
-        </a>
-        
-            
+        <a href="/TextSample/sponsorBulkLoadSample.txt" download="bulkUploadSample" class="btn btn-primary btn-equal sponsorShowText" style="display:none;">
+            Download Sample
+        </a>  
     </section>
 
+    <section class="content-box">
+        <form id="uploadForm" enctype="multipart/form-data">
+            <input type="file" id="file-upload" name="file" accept=".txt">
+
+            <label for="file-upload" class="btn btn-primary btn-equal">
+                Choose File
+            </label>
+
+            <button type="submit" class="btn btn-primary btn-equal">
+                Upload
+            </button>
+        </form> 
+    </section>
+
+    <div id="output"></div>
 
     <footer class="footer">
         <p>&copy; 2026 — Driver Incentive Program</p>

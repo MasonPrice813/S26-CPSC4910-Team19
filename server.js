@@ -12,6 +12,13 @@ const session = require("express-session");
 const app = express();
 app.use(express.json());
 
+const { parseBulkFile } = require("./Website/bulkParser");
+const storagebulk = multer.memoryStorage();
+const uploadText = multer({
+ storage: storagebulk,
+});
+
+
 app.use(session({
   secret: process.env.SESSION_SECRET,
   resave: false,
@@ -38,6 +45,7 @@ const pool = mysql.createPool({
 //Serve static files
 app.use("/Website", express.static(path.join(__dirname, "Website")));
 app.use("/Images", express.static(path.join(__dirname, "Images")));
+app.use("/TextSample", express.static(path.join(__dirname, "TextSample")));
 
 const uploadDir = path.join(__dirname, "Uploads");
 
@@ -3105,6 +3113,79 @@ app.post("/api/admin/users/:id/sponsors", requireAdmin, async (req, res) => {
     conn.release();
   }
 });
+
+app.post("/api/upload-bulk", uploadText.single("file"), async (req, res) => {
+ try {
+   if (!req.file) {
+     return res.status(400).json({ error: "No file uploaded" });
+   }
+
+   const fileContent = req.file.buffer.toString("utf-8");
+   const { results, errors } = await parseBulkFile(
+     fileContent,
+     req.session.user.role,
+     req.session.user.sponsor,
+     pool
+   );
+
+   let inserted = 0;
+   let insertedRows = [];
+   const conn = await pool.getConnection();
+   await conn.beginTransaction();
+   const sponsorOrg = req.session.user.sponsor;
+
+   try {
+     for (const r of results) {
+       if (r.action === "create") {
+         const finalOrg = r.org || req.session.user.sponsor;
+         await conn.query(
+           `INSERT INTO users
+           (role, first_name, last_name, username, email, password, sponsor)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+           [
+             r.type === "D" ? "Driver" : "Sponsor",
+             r.firstName,
+             r.lastName,
+             r.email,
+             r.email,
+             "TEMP_PASSWORD",
+             finalOrg
+           ]
+         );
+
+
+         inserted++;
+         insertedRows.push({
+           email: r.email,
+           name: `${r.firstName} ${r.lastName}`,
+           role: r.type === "D" ? "Driver" : "Sponsor"
+         });
+       }
+     }
+
+   await conn.commit();
+   }
+   catch (err) {
+     await conn.rollback();
+     throw err;
+   }
+   finally {
+     conn.release();
+   }
+
+   res.json({
+     success: true,
+     inserted,
+     insertedRows,
+     errors
+   });
+ }
+ catch (err) {
+   console.error(err);
+   res.status(500).json({ error: err.message });
+ }
+});
+
 
 //Start server
 app.listen(PORT, "0.0.0.0", () => {
