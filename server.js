@@ -1914,6 +1914,32 @@ app.post("/api/orders/checkout", requireLogin, async (req, res) => {
       ]
     );
 
+    await conn.query(
+      `INSERT INTO notifications
+        (
+          recipient_user_id,
+          actor_user_id,
+          type,
+          category,
+          title,
+          message,
+          related_entity_type,
+          related_entity_id,
+          scheduled_for
+        )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+      [
+        me.id,
+        null,
+        "order_placed",
+        "order",
+        "Order placed",
+        `Your order ${groupId} has been placed successfully.`,
+        "order_group",
+        groupId
+      ]
+    );
+
     await createOrderNotifications(conn, {
       recipientUserId: me.id,
       actorUserId: null,
@@ -1936,6 +1962,110 @@ app.post("/api/orders/checkout", requireLogin, async (req, res) => {
     await conn.rollback();
     console.error("checkout error:", err);
     return res.status(500).json({ error: "Checkout failed." });
+  } finally {
+    conn.release();
+  }
+});
+
+// ================= CANCEL ORDER =================
+app.post("/api/orders/:groupId/cancel", requireLogin, async (req, res) => {
+  const me = req.session.user;
+  const groupId = req.params.groupId;
+
+  if (me.role !== "Driver") {
+    return res.status(403).json({ error: "Drivers only" });
+  }
+
+  const conn = await pool.getConnection();
+
+  try {
+    await conn.beginTransaction();
+
+    // 🔍 Check if order exists + belongs to user
+    const [orders] = await conn.query(
+      `SELECT expected_delivery_date
+       FROM orders
+       WHERE group_id = ?
+         AND user_id = ?
+       LIMIT 1`,
+      [groupId, me.id]
+    );
+
+    if (orders.length === 0) {
+      await conn.rollback();
+      return res.status(404).json({ error: "Order not found." });
+    }
+
+    const expectedDelivery = new Date(orders[0].expected_delivery_date);
+    const now = new Date();
+
+    // 🚫 If already delivered → block cancel
+    if (now >= expectedDelivery) {
+      await conn.rollback();
+      return res.status(400).json({ error: "Order already delivered." });
+    }
+
+    // 🚫 If shipped (1 day after order) → block cancel
+    const shippedAt = new Date(expectedDelivery);
+    shippedAt.setDate(shippedAt.getDate() - 6); // matches your schedule logic roughly
+
+    if (now >= shippedAt) {
+      await conn.rollback();
+      return res.status(400).json({ error: "Order already shipped." });
+    }
+
+    // ❌ Delete orders (simple approach)
+    await conn.query(
+      `DELETE FROM orders
+      WHERE group_id = ?
+        AND user_id = ?`,
+      [groupId, me.id]
+    );
+
+    // ✅ ADD THIS RIGHT HERE
+    await conn.query(
+      `DELETE FROM notifications
+      WHERE related_entity_id = ?
+        AND type = 'order_placed'
+        AND recipient_user_id = ?`,
+      [groupId, me.id]
+    );
+
+    // 🔔 Create "Order Canceled" notification
+    await conn.query(
+      `INSERT INTO notifications
+        (
+          recipient_user_id,
+          actor_user_id,
+          type,
+          category,
+          title,
+          message,
+          related_entity_type,
+          related_entity_id,
+          scheduled_for
+        )
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+      [
+        me.id,
+        null,
+        "order_canceled",
+        "order",
+        "Order canceled",
+        `Your order ${groupId} has been canceled.`,
+        "order_group",
+        groupId
+      ]
+    );
+
+    await conn.commit();
+
+    res.json({ ok: true });
+
+  } catch (err) {
+    await conn.rollback();
+    console.error("cancel order error:", err);
+    res.status(500).json({ error: "Could not cancel order." });
   } finally {
     conn.release();
   }

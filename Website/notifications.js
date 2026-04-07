@@ -19,12 +19,16 @@ function formatDateTime(value) {
 
 function prettyType(type) {
   switch (type) {
+    case "order_placed":
+      return "Order Placed";
     case "order_shipped":
       return "Order Shipped";
     case "order_out_for_delivery":
       return "Out for Delivery";
     case "order_delivered":
       return "Delivered";
+    case "order_canceled":
+      return "Order Canceled";
     case "catalog_item_request":
       return "Catalog Item Request";
     default:
@@ -58,6 +62,19 @@ async function clearNotification(notificationId) {
   return res.json();
 }
 
+async function cancelOrder(orderId) {
+  const res = await fetch(`/api/orders/${orderId}/cancel`, {
+    method: "POST",
+    credentials: "same-origin"
+  });
+
+  if (!res.ok) {
+    throw new Error(`Cancel failed: ${res.status}`);
+  }
+
+  return res.json();
+}
+
 function renderNotifications(notifications) {
   const container = document.getElementById("notificationsContainer");
   if (!container) return;
@@ -74,6 +91,20 @@ function renderNotifications(notifications) {
   }
 
   notifications.forEach((n) => {
+
+    // ✅ FIXED LOGIC
+    const isShipped = n.type === "order_shipped" || n.type === "order_out_for_delivery";
+    const isDelivered = n.type === "order_delivered";
+    const isCanceled = n.type === "order_canceled";
+    const isPlaced = n.type === "order_placed";
+
+    const canCancel =
+      n.related_entity_id &&
+      isPlaced &&
+      !isShipped &&
+      !isDelivered &&
+      !isCanceled;
+
     const card = document.createElement("button");
     card.type = "button";
     card.className = "content-box";
@@ -90,7 +121,6 @@ function renderNotifications(notifications) {
     card.style.border = "1px solid rgba(255,255,255,0.1)";
     card.style.boxShadow = "0 10px 30px rgba(0,0,0,0.4)";
     card.style.borderRadius = "16px";
-
 
     card.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
@@ -115,6 +145,21 @@ function renderNotifications(notifications) {
           >
             Clear
           </button>
+
+          ${
+            canCancel
+              ? `
+              <button
+                class="cancel-order-btn btn btn-primary"
+                type="button"
+                data-order-id="${n.related_entity_id}"
+                style="padding:8px 16px;"
+              >
+                Cancel
+              </button>
+            `
+              : ""
+          }
         </div>
       </div>
 
@@ -136,6 +181,23 @@ function renderNotifications(notifications) {
         } catch (err) {
           console.error(err);
           alert("Could not clear notification.");
+        }
+      });
+    }
+
+    const cancelBtn = card.querySelector(".cancel-order-btn");
+    if (cancelBtn) {
+      cancelBtn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+
+        const orderId = cancelBtn.dataset.orderId;
+
+        try {
+          await cancelOrder(orderId);
+          await loadNotifications(); // ✅ refresh removes button
+        } catch (err) {
+          console.error(err);
+          alert("Could not cancel order.");
         }
       });
     }
