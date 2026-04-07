@@ -10,12 +10,14 @@
 <body>
 
 <div class="navbar">
-    <div>
+    <div style="display:flex; flex-direction:column;">
         <strong>Good Driver Incentive Program</strong>
-        <span class="muted" id="meBadge" style="margin-left:10px;">Loading user...</span>
+        <span class="muted" id="meBadge" style="margin-top:4px;">
+            Loading user...
+        </span>
     </div>
 
-    <div class="right" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+    <div class="right" style="display:flex; gap:10px; align-items:center; flex-wrap:nowrap; white-space:nowrap;">
 
         <button id="manageUsersBtn" class="btn btn-primary" style="display:none;">
             Manage Users
