@@ -2014,6 +2014,78 @@ app.post("/api/orders/:groupId/cancel", requireLogin, async (req, res) => {
       return res.status(400).json({ error: "Order already shipped." });
     }
 
+    // 💰 Get all orders in this group (to calculate refund)
+    const [orderRows] = await conn.query(
+      `SELECT point_cost, sponsor_name
+      FROM orders
+      WHERE group_id = ?
+        AND user_id = ?`,
+      [groupId, me.id]
+    );
+
+    if (orderRows.length === 0) {
+      await conn.rollback();
+      return res.status(404).json({ error: "Order not found." });
+    }
+
+    // 🧮 Calculate total refund
+    let totalRefund = 0;
+    let sponsorName = null;
+
+    for (const row of orderRows) {
+      totalRefund += Number(row.point_cost || 0);
+      sponsorName = row.sponsor_name; // same for all rows
+    }
+
+    // 🔍 Get driver_id
+    const [[driver]] = await conn.query(
+      `SELECT id FROM drivers WHERE user_id = ? LIMIT 1`,
+      [me.id]
+    );
+
+    if (!driver) {
+      await conn.rollback();
+      return res.status(404).json({ error: "Driver not found." });
+    }
+
+    // 🔍 Get current points BEFORE refund
+    const [[wallet]] = await conn.query(
+      `SELECT points
+      FROM user_sponsors
+      WHERE user_id = ?
+        AND sponsor_name = ?
+      LIMIT 1
+      FOR UPDATE`,
+      [me.id, sponsorName]
+    );
+
+    const pointsBefore = Number(wallet.points || 0);
+    const pointsAfter = pointsBefore + totalRefund;
+
+    // 💰 Refund points
+    await conn.query(
+      `UPDATE user_sponsors
+      SET points = ?
+      WHERE user_id = ?
+        AND sponsor_name = ?`,
+      [pointsAfter, me.id, sponsorName]
+    );
+
+    // 🧾 Log refund
+    await conn.query(
+      `INSERT INTO driver_point_history
+        (driver_id, sponsor_name, points_change, points_before, points_after, reason, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+      [
+        driver.id,
+        sponsorName,
+        totalRefund,
+        pointsBefore,
+        pointsAfter,
+        `Order canceled refund (${groupId})`
+      ]
+    );
+
     // ❌ Delete orders (simple approach)
     await conn.query(
       `DELETE FROM orders
