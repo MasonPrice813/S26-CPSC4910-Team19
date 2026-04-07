@@ -1056,6 +1056,76 @@ function roleTable(role) {
   return null;
 }
 
+app.post("/api/admin/users/admin", requireAdmin, async (req, res) => {
+  const {
+    first_name,
+    last_name,
+    username,
+    email,
+    password,
+    phone_number
+  } = req.body || {};
+
+  if (!first_name || !last_name || !username || !email || !password || !phone_number) {
+    return res.status(400).json({ error: "Missing required fields." });
+  }
+
+  const pw = String(password);
+  const strongPw = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
+
+  if (!strongPw.test(pw)) {
+    return res.status(400).json({
+      error: "Password must be at least 8 characters and include 1 uppercase letter, 1 lowercase letter, and 1 number."
+    });
+  }
+
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    const hashedPw = await bcrypt.hash(password, 12);
+
+    const [userResult] = await conn.query(
+      `INSERT INTO users
+         (role, first_name, last_name, username, email, password, phone_number, sponsor)
+       VALUES
+         (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        "Admin",
+        String(first_name).trim(),
+        String(last_name).trim(),
+        String(username).trim(),
+        String(email).trim(),
+        hashedPw,
+        String(phone_number).trim(),
+        null
+      ]
+    );
+
+    const newUserId = userResult.insertId;
+
+    await conn.query(
+      `INSERT INTO admins (user_id)
+       VALUES (?)`,
+      [newUserId]
+    );
+
+    await conn.commit();
+    res.status(201).json({ ok: true, user_id: newUserId });
+  } catch (err) {
+    await conn.rollback();
+
+    if (err && err.code === "ER_DUP_ENTRY") {
+      return res.status(409).json({ error: "Username or email already exists." });
+    }
+
+    console.error("create admin user error:", err);
+    res.status(500).json({ error: "Could not create admin user." });
+  } finally {
+    conn.release();
+  }
+});
+
 app.patch("/api/admin/users/:id/role", requireAdmin, async (req, res) => {
   const userId = Number(req.params.id);
   const newRole = String(req.body?.role || "").trim();
@@ -2602,7 +2672,13 @@ app.post("/api/notifications/read-all", requireLogin, async (req, res) => {
 app.get("/api/catalog/hidden-product-ids", requireLogin, async (req, res) => {
   try {
     const me = req.session.user;
-    const sponsor = me.sponsor || null;
+    let sponsor = null;
+
+    if (me.role === "Admin") {
+      sponsor = String(req.query.sponsor || "").trim() || null;
+    } else {
+      sponsor = me.sponsor || null;
+    }
 
     if (!sponsor) {
       return res.json({ productIds: [] });
@@ -2984,6 +3060,7 @@ app.get('/api/admin/drivers', async (req, res) => {
   try {
     let query = `
       SELECT DISTINCT
+        d.id AS driver_id,
         u.id AS user_id,
         u.first_name,
         u.last_name,
@@ -3013,10 +3090,82 @@ app.get('/api/admin/drivers', async (req, res) => {
   }
 });
 
+app.get("/api/admin/points", requireAdmin, async (req, res) => {
+  try {
+    const view = String(req.query.view || "week");
+    const driver = String(req.query.driver || "all");
+    const sponsor = String(req.query.sponsor || "").trim();
+
+    if (!sponsor) {
+      return res.status(400).json({ error: "Sponsor is required." });
+    }
+
+    let dateFormat;
+    let groupBy;
+    let dateFilter;
+
+    if (view === "year") {
+      dateFormat = "%b";
+      groupBy = "MONTH(h.created_at)";
+      dateFilter = "YEAR(h.created_at) = YEAR(CURDATE())";
+    } else if (view === "month") {
+      dateFormat = "%u";
+      groupBy = "WEEK(h.created_at)";
+      dateFilter = "MONTH(h.created_at) = MONTH(CURDATE()) AND YEAR(h.created_at) = YEAR(CURDATE())";
+    } else {
+      dateFormat = "%a";
+      groupBy = "DAY(h.created_at)";
+      dateFilter = "YEARWEEK(h.created_at, 1) = YEARWEEK(CURDATE(), 1)";
+    }
+
+    let sql = "";
+    const params = [];
+
+    if (driver === "all") {
+      sql = `
+        SELECT
+          DATE_FORMAT(h.created_at, '${dateFormat}') AS label,
+          AVG(h.points_after) AS value
+        FROM driver_point_history h
+        WHERE ${dateFilter}
+          AND h.sponsor_name = ?
+        GROUP BY ${groupBy}
+        ORDER BY MIN(h.created_at)
+      `;
+      params.push(sponsor);
+    } else {
+      sql = `
+        SELECT
+          DATE_FORMAT(h.created_at, '${dateFormat}') AS label,
+          MAX(h.points_after) AS value
+        FROM driver_point_history h
+        JOIN drivers d
+          ON h.driver_id = d.id
+        JOIN user_sponsors us
+          ON us.user_id = d.user_id
+        WHERE h.driver_id = ?
+          AND ${dateFilter}
+          AND h.sponsor_name = ?
+          AND us.sponsor_name = ?
+          AND us.status = 'Active'
+        GROUP BY ${groupBy}
+        ORDER BY MIN(h.created_at)
+      `;
+      params.push(Number(driver), sponsor, sponsor);
+    }
+
+    const [rows] = await pool.query(sql, params);
+    res.json(rows);
+  } catch (err) {
+    console.error("admin points error:", err);
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
 app.get("/api/sponsor/settings", requireSponsor, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT points_criteria, allow_negative
+      `SELECT points_criteria, allow_negative, points_per_dollar
        FROM sponsor_settings
        WHERE sponsor = ?
        LIMIT 1`,
@@ -3026,13 +3175,15 @@ app.get("/api/sponsor/settings", requireSponsor, async (req, res) => {
     if (!rows.length) {
       return res.json({
         pointsCriteria: "",
-        allowNegative: false
+        allowNegative: false,
+        pointsPerDollar: 10
       });
     }
 
     res.json({
       pointsCriteria: rows[0].points_criteria || "",
-      allowNegative: !!rows[0].allow_negative
+      allowNegative: !!rows[0].allow_negative,
+      pointsPerDollar: Number(rows[0].points_per_dollar || 10)
     });
   } catch (err) {
     console.error("sponsor settings load error:", err);
@@ -3045,18 +3196,55 @@ app.post("/api/sponsor/settings", requireSponsor, async (req, res) => {
     const pointsCriteria = String(req.body?.pointsCriteria || "");
     const allowNegative = !!req.body?.allowNegative;
 
+    const pointsPerDollar = Number(req.body?.pointsPerDollar);
+    if (!Number.isInteger(pointsPerDollar) || pointsPerDollar <= 0) {
+      return res.status(400).json({ error: "Points per dollar must be a positive whole number." });
+    }
+
     await pool.query(
-      `INSERT INTO sponsor_settings (sponsor, points_criteria, allow_negative)
-       VALUES (?, ?, ?)
+      `INSERT INTO sponsor_settings (sponsor, points_criteria, allow_negative, points_per_dollar)
+       VALUES (?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE
          points_criteria = VALUES(points_criteria),
-         allow_negative = VALUES(allow_negative)`,
-      [req.me.sponsor, pointsCriteria, allowNegative]
+         allow_negative = VALUES(allow_negative),
+         points_per_dollar = VALUES(points_per_dollar)`,
+      [req.me.sponsor, pointsCriteria, allowNegative, pointsPerDollar]
     );
 
     res.json({ ok: true });
   } catch (err) {
     console.error("sponsor settings save error:", err);
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
+app.get("/api/catalog/points-ratio", requireLogin, async (req, res) => {
+  try {
+    let sponsorName = null;
+
+    if (req.session.user.role === "Sponsor") {
+      sponsorName = req.session.user.sponsor || null;
+    } else if (req.session.user.role === "Driver") {
+      sponsorName = String(req.query.sponsor || "").trim() || null;
+    }
+
+    if (!sponsorName) {
+      return res.json({ pointsPerDollar: 10 });
+    }
+
+    const [rows] = await pool.query(
+      `SELECT points_per_dollar
+       FROM sponsor_settings
+       WHERE sponsor = ?
+       LIMIT 1`,
+      [sponsorName]
+    );
+
+    res.json({
+      pointsPerDollar: rows.length ? Number(rows[0].points_per_dollar || 10) : 10
+    });
+  } catch (err) {
+    console.error("catalog points ratio error:", err);
     res.status(500).json({ error: "Database error" });
   }
 });
@@ -3303,6 +3491,297 @@ app.post("/api/upload-bulk", uploadText.single("file"), async (req, res) => {
  }
 });
 
+app.post("/api/sponsor/orders/checkout", requireSponsor, async (req, res) => {
+  const me = req.session.user;
+
+  const {
+    items,
+    shipping_method,
+    shipping_point_cost,
+    shipping_dollar_cost,
+    driver_user_id
+  } = req.body || {};
+
+  if (!driver_user_id) {
+    return res.status(400).json({ error: "A driver must be selected." });
+  }
+
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: "Cart is empty." });
+  }
+
+  if (items.length > 4) {
+    return res.status(400).json({ error: "Cart cannot have more than 4 items." });
+  }
+
+  const allowedShipping = ["standard", "overnight"];
+  if (!allowedShipping.includes(shipping_method)) {
+    return res.status(400).json({ error: "Invalid shipping method." });
+  }
+
+  const expectedDeliveryDate = getExpectedDeliveryDate(shipping_method);
+  const cleanShippingPointCost = Number(shipping_point_cost || 0);
+  const cleanShippingDollarCost = Number(shipping_dollar_cost || 0);
+
+  if (!Number.isFinite(cleanShippingPointCost) || cleanShippingPointCost < 0) {
+    return res.status(400).json({ error: "Invalid shipping point cost." });
+  }
+
+  if (!Number.isFinite(cleanShippingDollarCost) || cleanShippingDollarCost < 0) {
+    return res.status(400).json({ error: "Invalid shipping dollar cost." });
+  }
+
+  const normalizedItems = [];
+
+  for (const item of items) {
+    const productId = Number(item.productId);
+    const pointCost = Number(item.pointCost);
+    const dollarCost = Number(item.dollarCost);
+    const qty = Number(item.qty || 0);
+
+    if (!Number.isInteger(productId) || productId <= 0) {
+      return res.status(400).json({ error: "Invalid product id in cart." });
+    }
+
+    if (!Number.isFinite(pointCost) || pointCost < 0) {
+      return res.status(400).json({ error: "Invalid point cost in cart." });
+    }
+
+    if (!Number.isFinite(dollarCost) || dollarCost < 0) {
+      return res.status(400).json({ error: "Invalid dollar cost in cart." });
+    }
+
+    if (!Number.isInteger(qty) || qty <= 0) {
+      return res.status(400).json({ error: "Invalid quantity in cart." });
+    }
+
+    normalizedItems.push({
+      productId,
+      pointCost,
+      dollarCost,
+      qty
+    });
+  }
+
+  const conn = await pool.getConnection();
+
+  try {
+    await conn.beginTransaction();
+
+    const [driverRows] = await conn.query(
+      `SELECT
+         u.id AS user_id,
+         u.first_name,
+         u.last_name
+       FROM users u
+       JOIN user_sponsors us
+         ON us.user_id = u.id
+       WHERE u.id = ?
+         AND u.role = 'Driver'
+         AND us.sponsor_name = ?
+         AND us.status = 'Active'
+       LIMIT 1
+       FOR UPDATE`,
+      [Number(driver_user_id), me.sponsor]
+    );
+
+    if (driverRows.length === 0) {
+      await conn.rollback();
+      return res.status(404).json({ error: "Selected driver is not active for your sponsor." });
+    }
+
+    const driverUser = driverRows[0];
+
+    const [[actorUser]] = await conn.query(
+      `SELECT first_name, last_name
+       FROM users
+       WHERE id = ?
+       LIMIT 1`,
+      [me.id]
+    );
+
+    const actorName = `${actorUser?.first_name || ""} ${actorUser?.last_name || ""}`.trim() || "Sponsor user";
+
+    const itemsPointTotal = normalizedItems.reduce((sum, item) => {
+      return sum + (item.pointCost * item.qty);
+    }, 0);
+
+    const totalPointCost = itemsPointTotal + cleanShippingPointCost;
+
+    const [[wallet]] = await conn.query(
+      `SELECT points
+       FROM user_sponsors
+       WHERE user_id = ?
+         AND sponsor_name = ?
+         AND status = 'Active'
+       LIMIT 1
+       FOR UPDATE`,
+      [driverUser.user_id, me.sponsor]
+    );
+
+    if (!wallet) {
+      await conn.rollback();
+      return res.status(404).json({ error: "Driver sponsor wallet not found." });
+    }
+
+    const currentPoints = Number(wallet.points || 0);
+
+    if (totalPointCost > currentPoints) {
+      await conn.rollback();
+      return res.status(400).json({ error: "The selected driver does not have enough points." });
+    }
+
+    const remainingPoints = currentPoints - totalPointCost;
+
+    await conn.query(
+      `UPDATE user_sponsors
+       SET points = ?
+       WHERE user_id = ?
+         AND sponsor_name = ?`,
+      [remainingPoints, driverUser.user_id, me.sponsor]
+    );
+
+    const [[driverRow]] = await conn.query(
+      `SELECT id
+       FROM drivers
+       WHERE user_id = ?
+       LIMIT 1`,
+      [driverUser.user_id]
+    );
+
+    if (!driverRow) {
+      await conn.rollback();
+      return res.status(404).json({ error: "Driver record not found." });
+    }
+
+    await conn.query(
+      `INSERT INTO driver_point_history
+        (driver_id, sponsor_name, points_change, points_before, points_after, reason, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+      [
+        driverRow.id,
+        me.sponsor,
+        -totalPointCost,
+        currentPoints,
+        remainingPoints,
+        `Sponsor Purchase by ${actorName}`
+      ]
+    );
+
+    const [groupResult] = await conn.query(
+      `SELECT UUID() AS group_id`
+    );
+    const groupId = groupResult[0].group_id;
+
+    const now = new Date();
+
+    for (const item of normalizedItems) {
+      for (let i = 0; i < item.qty; i++) {
+        await conn.query(
+          `INSERT INTO orders
+             (
+               user_id,
+               sponsor_name,
+               product_id,
+               point_cost,
+               dollar_cost,
+               date_ordered,
+               group_id,
+               shipping_method,
+               expected_delivery_date
+             )
+           VALUES (?, ?, ?, ?, ?, NOW(), ?, ?, ?)`,
+          [
+            driverUser.user_id,
+            me.sponsor,
+            item.productId,
+            item.pointCost,
+            item.dollarCost,
+            groupId,
+            shipping_method,
+            expectedDeliveryDate
+          ]
+        );
+      }
+    }
+
+    if (cleanShippingPointCost > 0 || cleanShippingDollarCost > 0) {
+      await conn.query(
+        `INSERT INTO orders
+           (
+             user_id,
+             sponsor_name,
+             product_id,
+             point_cost,
+             dollar_cost,
+             date_ordered,
+             group_id,
+             shipping_method,
+             expected_delivery_date
+           )
+         VALUES (?, ?, ?, ?, ?, NOW(), ?, ?, ?)`,
+        [
+          driverUser.user_id,
+          me.sponsor,
+          0,
+          cleanShippingPointCost,
+          cleanShippingDollarCost,
+          groupId,
+          shipping_method,
+          expectedDeliveryDate
+        ]
+      );
+    }
+
+    await conn.query(
+      `INSERT INTO notifications
+        (
+          recipient_user_id,
+          actor_user_id,
+          type,
+          category,
+          title,
+          message,
+          related_entity_type,
+          related_entity_id,
+          scheduled_for
+        )
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+      [
+        driverUser.user_id,
+        me.id,
+        "sponsor_purchase",
+        "order",
+        "Item purchased for you",
+        `${actorName} has purchased an item on your behalf.`,
+        "order_group",
+        groupId
+      ]
+    );
+
+    await createOrderNotifications(conn, {
+      recipientUserId: driverUser.user_id,
+      actorUserId: me.id,
+      groupId,
+      shippingMethod: shipping_method,
+      expectedDeliveryDate,
+      dateOrdered: now
+    });
+
+    await conn.commit();
+    res.json({
+      ok: true,
+      groupId,
+      remainingPoints
+    });
+  } catch (err) {
+    await conn.rollback();
+    console.error("sponsor checkout error:", err);
+    res.status(500).json({ error: "Could not place sponsor order." });
+  } finally {
+    conn.release();
+  }
+});
 
 //Start server
 app.listen(PORT, "0.0.0.0", () => {

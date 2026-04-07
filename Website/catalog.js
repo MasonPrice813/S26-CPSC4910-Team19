@@ -26,9 +26,16 @@ let CURRENT_USER_SPONSOR = null;
 let DRIVER_SPONSORS = [];
 let ACTIVE_DRIVER_SPONSOR = null;
 
+let ADMIN_SPONSORS = [];
+let ACTIVE_ADMIN_SPONSOR = null;
+
+let SPONSOR_DRIVERS = [];
+let ACTIVE_SPONSOR_DRIVER_ID = null;
+let ACTIVE_SPONSOR_DRIVER_NAME = "";
+
 let HIDDEN_PRODUCT_IDS = new Set();
 
-const POINTS_PER_DOLLAR = 10; // 10 points = $1
+let POINTS_PER_DOLLAR = 10;
 
 function dollarsToPoints(priceDollars) {
   const p = Number(priceDollars);
@@ -44,8 +51,18 @@ function formatDollars(priceDollars) {
 
 function getCartStorageKey() {
   if (!CURRENT_USER_ID) return "catalogCart_guest";
-  const sponsorPart = ACTIVE_DRIVER_SPONSOR || "no_sponsor";
-  return `catalogCart_${CURRENT_USER_ID}_${sponsorPart}`;
+
+  if (CURRENT_USER_ROLE === "Driver") {
+    const sponsorPart = ACTIVE_DRIVER_SPONSOR || "no_sponsor";
+    return `catalogCart_${CURRENT_USER_ID}_${sponsorPart}`;
+  }
+
+  if (CURRENT_USER_ROLE === "Sponsor") {
+    const driverPart = ACTIVE_SPONSOR_DRIVER_ID || "no_driver";
+    return `catalogCart_${CURRENT_USER_ID}_driver_${driverPart}`;
+  }
+
+  return `catalogCart_${CURRENT_USER_ID}_default`;
 }
 
 function loadCart() {
@@ -127,15 +144,18 @@ function updatePointsDisplay() {
     document.getElementById("pointsValue") ||
     document.getElementById("pointsBalance");
 
-  if (pointsEl) {
-    const sponsorPrefix =
-      CURRENT_USER_ROLE === "Driver" && ACTIVE_DRIVER_SPONSOR
-        ? `${ACTIVE_DRIVER_SPONSOR}: `
-        : "";
+  if (!pointsEl) return;
 
-    pointsEl.textContent = `${sponsorPrefix}Points: ${getAvailablePoints()}`;
-    pointsEl.style.display = "inline";
+  let prefix = "";
+
+  if (CURRENT_USER_ROLE === "Driver" && ACTIVE_DRIVER_SPONSOR) {
+    prefix = `${ACTIVE_DRIVER_SPONSOR}: `;
+  } else if (CURRENT_USER_ROLE === "Sponsor" && ACTIVE_SPONSOR_DRIVER_NAME) {
+    prefix = `${ACTIVE_SPONSOR_DRIVER_NAME}: `;
   }
+
+  pointsEl.textContent = `${prefix}Points: ${getAvailablePoints()}`;
+  pointsEl.style.display = "inline";
 }
 
 function updateCartBadge() {
@@ -154,6 +174,11 @@ function canAffordProduct(product) {
 }
 
 function addToCart(product) {
+  if (CURRENT_USER_ROLE === "Sponsor" && !ACTIVE_SPONSOR_DRIVER_ID) {
+    alert("Please select a driver before adding items to the cart.");
+    return;
+  }
+
   const totalItems = getCartItemCount();
   const pointCost = dollarsToPoints(product.price);
 
@@ -162,7 +187,7 @@ function addToCart(product) {
     return;
   }
 
-  if (pointCost > getAvailablePoints()) {
+  if ((CURRENT_USER_ROLE === "Driver" || CURRENT_USER_ROLE === "Sponsor") && pointCost > getAvailablePoints()) {
     alert("You do not have enough points for this item.");
     return;
   }
@@ -466,6 +491,22 @@ function renderRecommendedProducts() {
 
     grid.appendChild(card);
   });
+}
+
+async function loadPointsPerDollarRatio() {
+  try {
+    let url = "/api/catalog/points-ratio";
+
+    if (CURRENT_USER_ROLE === "Driver" && ACTIVE_DRIVER_SPONSOR) {
+      url += `?sponsor=${encodeURIComponent(ACTIVE_DRIVER_SPONSOR)}`;
+    }
+
+    const data = await getJSON(url);
+    POINTS_PER_DOLLAR = Number(data?.pointsPerDollar || 10);
+  } catch (err) {
+    console.error("Failed to load points ratio:", err);
+    POINTS_PER_DOLLAR = 10;
+  }
 }
 
 async function loadRecommendations() {
@@ -847,7 +888,15 @@ async function loadNotificationCount() {
 
 async function loadHiddenProductIds() {
   try {
-    const data = await getJSON("/api/catalog/hidden-product-ids");
+    const sponsor = getEffectiveCatalogSponsor();
+
+    if (!sponsor) {
+      HIDDEN_PRODUCT_IDS = new Set();
+      return;
+    }
+
+    const url = `/api/catalog/hidden-product-ids?sponsor=${encodeURIComponent(sponsor)}`;
+    const data = await getJSON(url);
     const ids = Array.isArray(data?.productIds) ? data.productIds.map(Number) : [];
     HIDDEN_PRODUCT_IDS = new Set(ids);
   } catch (err) {
@@ -1135,6 +1184,200 @@ async function setupAdminButton() {
   }
 }
 
+function getSavedActiveAdminSponsor() {
+  if (!CURRENT_USER_ID) return null;
+  return localStorage.getItem(`activeAdminCatalogSponsor_${CURRENT_USER_ID}`);
+}
+
+function saveActiveAdminSponsor(sponsorName) {
+  if (!CURRENT_USER_ID) return;
+  localStorage.setItem(`activeAdminCatalogSponsor_${CURRENT_USER_ID}`, sponsorName || "");
+}
+
+async function loadAdminSponsors() {
+  const data = await getJSON("/api/admin/sponsors");
+  ADMIN_SPONSORS = Array.isArray(data) ? data.map(row => row.sponsor).filter(Boolean) : [];
+  return ADMIN_SPONSORS;
+}
+
+function getEffectiveCatalogSponsor() {
+  if (CURRENT_USER_ROLE === "Driver") return ACTIVE_DRIVER_SPONSOR || null;
+  if (CURRENT_USER_ROLE === "Sponsor") return CURRENT_USER_SPONSOR || null;
+  if (CURRENT_USER_ROLE === "Admin") return ACTIVE_ADMIN_SPONSOR || null;
+  return null;
+}
+
+function renderCatalogSponsorDropdown() {
+  const wrap = document.getElementById("catalogSponsorPickerWrap");
+  const select = document.getElementById("catalogSponsorSelect");
+  const label = document.getElementById("catalogSponsorLabel");
+
+  if (!wrap || !select || !label) return;
+
+  wrap.style.display = "none";
+  select.innerHTML = "";
+
+  if (CURRENT_USER_ROLE === "Driver") {
+    if (!DRIVER_SPONSORS.length) return;
+
+    wrap.style.display = "block";
+    label.textContent = "Active Sponsor";
+
+    DRIVER_SPONSORS.forEach((row) => {
+      const opt = document.createElement("option");
+      opt.value = row.sponsor_name;
+      opt.textContent = `${row.sponsor_name} (${Number(row.points || 0)} pts)`;
+      select.appendChild(opt);
+    });
+
+    const saved = getSavedActiveDriverSponsor();
+    const validSaved = DRIVER_SPONSORS.some((s) => s.sponsor_name === saved);
+
+    ACTIVE_DRIVER_SPONSOR = validSaved
+      ? saved
+      : DRIVER_SPONSORS[0]?.sponsor_name || null;
+
+    select.value = ACTIVE_DRIVER_SPONSOR || "";
+    refreshActiveDriverSponsorPoints();
+
+    select.onchange = async () => {
+      ACTIVE_DRIVER_SPONSOR = select.value || null;
+      saveActiveDriverSponsor(ACTIVE_DRIVER_SPONSOR);
+
+      await loadPointsPerDollarRatio();
+
+      refreshActiveDriverSponsorPoints();
+      loadCart();
+      updateCartBadge();
+      renderCartPanel();
+      currentPage = 1;
+      applyFilters();
+    };
+
+    return;
+  }
+
+  if (CURRENT_USER_ROLE === "Admin") {
+    if (!ADMIN_SPONSORS.length) return;
+
+    wrap.style.display = "block";
+    label.textContent = "View Sponsor Catalog";
+
+    ADMIN_SPONSORS.forEach((sponsorName) => {
+      const opt = document.createElement("option");
+      opt.value = sponsorName;
+      opt.textContent = sponsorName;
+      select.appendChild(opt);
+    });
+
+    const saved = getSavedActiveAdminSponsor();
+    ACTIVE_ADMIN_SPONSOR = ADMIN_SPONSORS.includes(saved)
+      ? saved
+      : ADMIN_SPONSORS[0] || null;
+
+    select.value = ACTIVE_ADMIN_SPONSOR || "";
+
+    select.onchange = async () => {
+      ACTIVE_ADMIN_SPONSOR = select.value || null;
+      saveActiveAdminSponsor(ACTIVE_ADMIN_SPONSOR);
+      await loadHiddenProductIds();
+      currentPage = 1;
+      applyFilters();
+    };
+
+    return;
+  }
+}
+
+function getSavedActiveSponsorDriverId() {
+  if (!CURRENT_USER_ID) return null;
+  return localStorage.getItem(`activeSponsorDriver_${CURRENT_USER_ID}`);
+}
+
+function saveActiveSponsorDriverId(driverUserId) {
+  if (!CURRENT_USER_ID) return;
+  localStorage.setItem(`activeSponsorDriver_${CURRENT_USER_ID}`, driverUserId || "");
+}
+
+async function loadSponsorDrivers() {
+  const data = await getJSON("/api/sponsor/drivers");
+  SPONSOR_DRIVERS = Array.isArray(data) ? data : [];
+  return SPONSOR_DRIVERS;
+}
+
+function getActiveSponsorDriverRecord() {
+  return SPONSOR_DRIVERS.find(
+    (d) => String(d.user_id) === String(ACTIVE_SPONSOR_DRIVER_ID)
+  ) || null;
+}
+
+function renderSponsorDriverDropdown() {
+  const wrap = document.getElementById("sponsorDriverPickerWrap");
+  const select = document.getElementById("sponsorDriverSelect");
+  const help = document.getElementById("sponsorDriverHelp");
+
+  if (!wrap || !select) return;
+
+  if (CURRENT_USER_ROLE !== "Sponsor" || !SPONSOR_DRIVERS.length) {
+    wrap.style.display = "none";
+    return;
+  }
+
+  wrap.style.display = "block";
+  if (help) help.style.display = "block";
+
+  select.innerHTML = `<option value="">Select driver</option>`;
+
+  SPONSOR_DRIVERS.forEach((driver) => {
+    const opt = document.createElement("option");
+    opt.value = String(driver.user_id);
+    opt.textContent = `${driver.first_name} ${driver.last_name} (${Number(driver.points || 0)} pts)`;
+    select.appendChild(opt);
+  });
+
+  const saved = getSavedActiveSponsorDriverId();
+  const validSaved = SPONSOR_DRIVERS.some(
+    (d) => String(d.user_id) === String(saved)
+  );
+
+  ACTIVE_SPONSOR_DRIVER_ID = validSaved
+    ? saved
+    : (SPONSOR_DRIVERS[0]?.user_id ? String(SPONSOR_DRIVERS[0].user_id) : null);
+
+  select.value = ACTIVE_SPONSOR_DRIVER_ID || "";
+
+  const active = getActiveSponsorDriverRecord();
+  ACTIVE_SPONSOR_DRIVER_NAME = active
+    ? `${active.first_name} ${active.last_name}`
+    : "";
+
+  saveActiveSponsorDriverId(ACTIVE_SPONSOR_DRIVER_ID);
+  refreshActiveSponsorDriverPoints();
+
+  select.onchange = async () => {
+    ACTIVE_SPONSOR_DRIVER_ID = select.value || null;
+    saveActiveSponsorDriverId(ACTIVE_SPONSOR_DRIVER_ID);
+
+    const selected = getActiveSponsorDriverRecord();
+    ACTIVE_SPONSOR_DRIVER_NAME = selected
+      ? `${selected.first_name} ${selected.last_name}`
+      : "";
+
+    refreshActiveSponsorDriverPoints();
+    clearCart();
+    currentPage = 1;
+    applyFilters();
+    renderRecommendedProducts();
+    renderCartPanel();
+  };
+}
+
+function refreshActiveSponsorDriverPoints() {
+  const rec = getActiveSponsorDriverRecord();
+  CURRENT_USER_POINTS = rec ? Number(rec.points || 0) : 0;
+  updatePointsDisplay();
+}
+
 setupAdminButton();
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -1177,13 +1420,23 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     if (CURRENT_USER_ROLE === "Driver") {
       await loadDriverSponsors();
-      renderDriverSponsorDropdown();
+      renderCatalogSponsorDropdown();
+      loadCart();
+    } else if (CURRENT_USER_ROLE === "Admin") {
+      await loadAdminSponsors();
+      renderCatalogSponsorDropdown();
+      CURRENT_USER_POINTS = 0;
+    } else if (CURRENT_USER_ROLE === "Sponsor") {
+      await loadSponsorDrivers();
+      renderSponsorDriverDropdown();
       loadCart();
     } else {
       CURRENT_USER_POINTS = Number(me.points || 0);
     }
 
-    if (CURRENT_USER_ROLE === "Driver") {
+    await loadPointsPerDollarRatio();
+
+    if (CURRENT_USER_ROLE === "Driver" || CURRENT_USER_ROLE === "Sponsor") {
       updatePointsDisplay();
 
       if (cartBtn) {
@@ -1241,12 +1494,25 @@ document.addEventListener("DOMContentLoaded", async () => {
               ? "Expedited Overnight (+20%)"
               : "Standard Shipping (Free)";
 
-          const confirmed = window.confirm(
-            `Confirm checkout?\n\n` +
-            `Items: ${getCartItemCount()}\n` +
-            `Shipping: ${shippingLabel}\n` +
-            `Total: ${totalPoints} points`
-          );
+          let confirmed = false;
+
+          if (CURRENT_USER_ROLE === "Driver") {
+            confirmed = window.confirm(
+              `Confirm checkout?\n\n` +
+              `Items: ${getCartItemCount()}\n` +
+              `Shipping: ${shippingLabel}\n` +
+              `Total: ${totalPoints} points`
+            );
+          } else if (CURRENT_USER_ROLE === "Sponsor") {
+            confirmed = window.confirm(
+              `Confirm checkout?\n\n` +
+              `Driver: ${ACTIVE_SPONSOR_DRIVER_NAME || "Selected driver"}\n` +
+              `Shipping: ${shippingLabel}\n` +
+              `Items: ${getCartItemCount()}\n` +
+              `Total: ${totalPoints} points\n` +
+              `These points will be deducted from this driver's balance.`
+            );
+          }
 
           if (!confirmed) return;
 
@@ -1258,55 +1524,110 @@ document.addEventListener("DOMContentLoaded", async () => {
           }
 
           try {
-            const res = await fetch("/api/orders/checkout", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json"
-              },
-              credentials: "same-origin",
-              body: JSON.stringify({
-                items: cart.map(item => ({
-                  productId: item.productId,
-                  qty: item.qty,
-                  pointCost: item.pointCost,
-                  dollarCost: item.dollarCost
-                })),
-                shipping_method: selectedShipping,
-                shipping_point_cost: getShippingPointCost(),
-                shipping_dollar_cost: getShippingDollarCost(),
-                sponsor_name: ACTIVE_DRIVER_SPONSOR
-              })
-            });
+            if (CURRENT_USER_ROLE === "Sponsor") {
+              if (!ACTIVE_SPONSOR_DRIVER_ID) {
+                alert("Please select a driver before checkout.");
+                confirmCheckoutBtn.disabled = false;
+                return;
+              }
 
-            const data = await res.json();
+              const res = await fetch("/api/sponsor/orders/checkout", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json"
+                },
+                credentials: "same-origin",
+                body: JSON.stringify({
+                  items: cart.map(item => ({
+                    productId: item.productId,
+                    qty: item.qty,
+                    pointCost: item.pointCost,
+                    dollarCost: item.dollarCost
+                  })),
+                  shipping_method: selectedShipping,
+                  shipping_point_cost: getShippingPointCost(),
+                  shipping_dollar_cost: getShippingDollarCost(),
+                  driver_user_id: ACTIVE_SPONSOR_DRIVER_ID
+                })
+              });
 
-            if (!res.ok) {
-              throw new Error(data.error || "Checkout failed.");
+              const data = await res.json();
+
+              if (!res.ok) {
+                throw new Error(data.error || "Checkout failed.");
+              }
+
+              CURRENT_USER_POINTS = Number(data.remainingPoints || 0);
+
+              const activeDriver = getActiveSponsorDriverRecord();
+              if (activeDriver) {
+                activeDriver.points = CURRENT_USER_POINTS;
+              }
+
+              clearCart();
+
+              if (checkoutPanel) {
+                checkoutPanel.style.display = "none";
+              }
+
+              updatePointsDisplay();
+              updateCartBadge();
+              renderCartPanel();
+              applyFilters();
+
+              alert(`Order placed successfully for ${ACTIVE_SPONSOR_DRIVER_NAME || "selected driver"}.`);
+            } else {
+              const res = await fetch("/api/orders/checkout", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json"
+                },
+                credentials: "same-origin",
+                body: JSON.stringify({
+                  items: cart.map(item => ({
+                    productId: item.productId,
+                    qty: item.qty,
+                    pointCost: item.pointCost,
+                    dollarCost: item.dollarCost
+                  })),
+                  shipping_method: selectedShipping,
+                  shipping_point_cost: getShippingPointCost(),
+                  shipping_dollar_cost: getShippingDollarCost(),
+                  sponsor_name: ACTIVE_DRIVER_SPONSOR
+                })
+              });
+
+              const data = await res.json();
+
+              if (!res.ok) {
+                throw new Error(data.error || "Checkout failed.");
+              }
+
+              CURRENT_USER_POINTS = Number(data.remainingPoints || 0);
+
+              const activeRecord = DRIVER_SPONSORS.find(
+                s => s.sponsor_name === ACTIVE_DRIVER_SPONSOR
+              );
+              if (activeRecord) {
+                activeRecord.points = CURRENT_USER_POINTS;
+              }
+              
+              clearCart();
+
+              if (checkoutPanel) {
+                checkoutPanel.style.display = "none";
+              }
+
+              updatePointsDisplay();
+              updateCartBadge();
+              renderCartPanel();
+              applyFilters();
+
+              alert("Order placed successfully.");
+
             }
-
-            CURRENT_USER_POINTS = Number(data.remainingPoints || 0);
-
-            const activeRecord = DRIVER_SPONSORS.find(
-              s => s.sponsor_name === ACTIVE_DRIVER_SPONSOR
-            );
-            if (activeRecord) {
-              activeRecord.points = CURRENT_USER_POINTS;
-            }
-            
-            clearCart();
-
-            if (checkoutPanel) {
-              checkoutPanel.style.display = "none";
-            }
-
-            updatePointsDisplay();
-            updateCartBadge();
-            renderCartPanel();
-            applyFilters();
-
-            alert("Order placed successfully.");
-
-          } catch (err) {
+          } 
+          catch (err) {
             console.error("Checkout failed:", err);
             alert(err.message || "Checkout failed.");
           } finally {

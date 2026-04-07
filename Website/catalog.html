@@ -10,12 +10,14 @@
 <body>
 
 <div class="navbar">
-    <div>
+    <div style="display:flex; flex-direction:column;">
         <strong>Good Driver Incentive Program</strong>
-        <span class="muted" id="meBadge" style="margin-left:10px;">Loading user...</span>
+        <span class="muted" id="meBadge" style="margin-top:4px;">
+            Loading user...
+        </span>
     </div>
 
-    <div class="right" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+    <div class="right" style="display:flex; gap:10px; align-items:center; flex-wrap:nowrap; white-space:nowrap;">
 
         <button id="manageUsersBtn" class="btn btn-primary" style="display:none;">
             Manage Users
@@ -81,12 +83,24 @@
                 </p>
             </div>
 
-            <div id="driverSponsorPickerWrap" style="display:none; min-width:220px;">
-                <label class="muted small" for="driverSponsorSelect">Active Sponsor</label>
-                <select id="driverSponsorSelect">
+            <div id="catalogSponsorPickerWrap" style="display:none; min-width:220px;">
+                <label class="muted small" for="catalogSponsorSelect" id="catalogSponsorLabel">
+                    Active Sponsor
+                </label>
+                <select id="catalogSponsorSelect">
                     <option value="">Select sponsor</option>
                 </select>
                 <div id="pointsValue" class="muted small" style="margin-top:6px; display:none;">Points: 0</div>
+            </div>
+
+            <div id="sponsorDriverPickerWrap" style="display:none; min-width:260px;">
+                <label class="muted small" for="sponsorDriverSelect">Purchase for Driver</label>
+                <select id="sponsorDriverSelect">
+                    <option value="">Select driver</option>
+                </select>
+                <div id="sponsorDriverHelp" class="muted small" style="margin-top:6px; display:none;">
+                    Sponsor purchases will be placed for the selected driver.
+                </div>
             </div>
         </div>
 

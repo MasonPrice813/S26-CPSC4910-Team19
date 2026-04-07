@@ -14,6 +14,9 @@ const saveCriteriaBtn = document.getElementById("saveSettingsBtn");
 
 const transactionRangeFilter = document.getElementById("transactionRangeFilter");
 
+const pointsPerDollarInput = document.getElementById("pointsPerDollarInput");
+const currentRatioText = document.getElementById("currentRatioText");
+
 function formatNumber(value) {
   return Number(value || 0).toLocaleString("en-US");
 }
@@ -493,6 +496,16 @@ async function loadSponsorSettings() {
 
     criteriaTextarea.value = data.pointsCriteria || "";
     allowNegativeSelect.value = data.allowNegative ? "yes" : "no";
+
+    const ratio = Number(data.pointsPerDollar || 10);
+
+    if (pointsPerDollarInput) {
+      pointsPerDollarInput.value = ratio;
+    }
+
+    if (currentRatioText) {
+      currentRatioText.textContent = `Current dollar/point ratio: ${ratio} pts/$1`;
+    }
   } catch (err) {
     console.error("Error loading settings:", err);
   }
@@ -501,6 +514,12 @@ async function loadSponsorSettings() {
 saveCriteriaBtn?.addEventListener("click", async () => {
   const criteria = criteriaTextarea.value;
   const allowNegative = allowNegativeSelect.value === "yes";
+  const pointsPerDollar = Number(pointsPerDollarInput?.value || 10);
+
+  if (!Number.isInteger(pointsPerDollar) || pointsPerDollar <= 0) {
+    alert("Please enter a valid whole number for points per $1.");
+    return;
+  }
 
   try {
     const response = await fetch("/api/sponsor/settings", {
@@ -510,14 +529,19 @@ saveCriteriaBtn?.addEventListener("click", async () => {
       },
       body: JSON.stringify({
         pointsCriteria: criteria,
-        allowNegative
+        allowNegative,
+        pointsPerDollar
       })
     });
 
     if (response.ok) {
+      if (currentRatioText) {
+        currentRatioText.textContent = `Current dollar/point ratio: ${pointsPerDollar} pts/$1`;
+      }
       alert("Settings saved successfully.");
     } else {
-      alert("Failed to save settings.");
+      const data = await response.json().catch(() => ({}));
+      alert(data.error || "Failed to save settings.");
     }
   } catch (err) {
     console.error("Save error:", err);

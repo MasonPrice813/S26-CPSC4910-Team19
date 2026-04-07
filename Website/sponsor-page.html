@@ -247,10 +247,10 @@
       <div style="margin-top:12px;">
         <label class="muted small">Sponsor Point Rules / Criteria</label>
         <textarea id="pointsCriteria" style="width:100%; min-height:120px;">
-Example:
-+10 points for safe week
-+25 monthly bonus
--15 late delivery
+          Example:
+          +10 points for safe week
+          +25 monthly bonus
+          -15 late delivery
         </textarea>
       </div>
 
@@ -263,6 +263,27 @@ Example:
           <option value="yes">Yes</option>
           <option value="no" selected>No</option>
         </select>
+      </div>
+
+      <div style="margin-top:16px;">
+        <div class="muted small" id="currentRatioText">Current dollar/point ratio: 10 pts/$1</div>
+      </div>
+
+      <div style="margin-top:16px;">
+        <label class="muted small" for="pointsPerDollarInput">
+          Change point value to
+        </label>
+        <div style="display:flex; align-items:center; gap:10px; margin-top:8px; flex-wrap:wrap;">
+          <input
+            type="number"
+            id="pointsPerDollarInput"
+            min="1"
+            step="1"
+            value="10"
+            style="max-width:180px;"
+          />
+          <span class="muted small">points per $1</span>
+        </div>
       </div>
 
       <div style="margin-top:16px;">

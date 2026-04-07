@@ -178,6 +178,53 @@ async function loadBugReports() {
     }
 }
 
+async function createAdminUser() {
+    const msg = document.getElementById("createAdminMsg");
+    const btn = document.getElementById("createAdminBtn");
+
+    const first_name = document.getElementById("adminFirstName").value.trim();
+    const last_name = document.getElementById("adminLastName").value.trim();
+    const username = document.getElementById("adminUsername").value.trim();
+    const email = document.getElementById("adminEmail").value.trim();
+    const password = document.getElementById("adminPassword").value;
+    const phone_number = document.getElementById("adminPhone").value.trim();
+
+    if (!first_name || !last_name || !username || !email || !password || !phone_number) {
+        msg.textContent = "Please fill in all fields.";
+        return;
+    }
+
+    btn.disabled = true;
+    msg.textContent = "Creating admin user...";
+
+    try {
+        await sendJSON("/api/admin/users/admin", "POST", {
+            first_name,
+            last_name,
+            username,
+            email,
+            password,
+            phone_number
+        });
+
+        msg.textContent = "Admin user created.";
+
+        document.getElementById("adminFirstName").value = "";
+        document.getElementById("adminLastName").value = "";
+        document.getElementById("adminUsername").value = "";
+        document.getElementById("adminEmail").value = "";
+        document.getElementById("adminPassword").value = "";
+        document.getElementById("adminPhone").value = "";
+
+        await searchUsers();
+    } catch (err) {
+        console.error(err);
+        msg.textContent = err.message || "Failed to create admin user.";
+    } finally {
+        btn.disabled = false;
+    }
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
     loadMe().catch(console.warn);
     loadBugReports().catch(console.error);
@@ -191,6 +238,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
 
     document.getElementById("searchBtn").addEventListener("click", searchUsers);
+    document.getElementById("createAdminBtn")?.addEventListener("click", createAdminUser);
 
     document.addEventListener("click", async (e) => {
         const saveBtn = e.target.closest(".saveRoleBtn");
