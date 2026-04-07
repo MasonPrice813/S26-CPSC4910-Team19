@@ -3491,6 +3491,297 @@ app.post("/api/upload-bulk", uploadText.single("file"), async (req, res) => {
  }
 });
 
+app.post("/api/sponsor/orders/checkout", requireSponsor, async (req, res) => {
+  const me = req.session.user;
+
+  const {
+    items,
+    shipping_method,
+    shipping_point_cost,
+    shipping_dollar_cost,
+    driver_user_id
+  } = req.body || {};
+
+  if (!driver_user_id) {
+    return res.status(400).json({ error: "A driver must be selected." });
+  }
+
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: "Cart is empty." });
+  }
+
+  if (items.length > 4) {
+    return res.status(400).json({ error: "Cart cannot have more than 4 items." });
+  }
+
+  const allowedShipping = ["standard", "overnight"];
+  if (!allowedShipping.includes(shipping_method)) {
+    return res.status(400).json({ error: "Invalid shipping method." });
+  }
+
+  const expectedDeliveryDate = getExpectedDeliveryDate(shipping_method);
+  const cleanShippingPointCost = Number(shipping_point_cost || 0);
+  const cleanShippingDollarCost = Number(shipping_dollar_cost || 0);
+
+  if (!Number.isFinite(cleanShippingPointCost) || cleanShippingPointCost < 0) {
+    return res.status(400).json({ error: "Invalid shipping point cost." });
+  }
+
+  if (!Number.isFinite(cleanShippingDollarCost) || cleanShippingDollarCost < 0) {
+    return res.status(400).json({ error: "Invalid shipping dollar cost." });
+  }
+
+  const normalizedItems = [];
+
+  for (const item of items) {
+    const productId = Number(item.productId);
+    const pointCost = Number(item.pointCost);
+    const dollarCost = Number(item.dollarCost);
+    const qty = Number(item.qty || 0);
+
+    if (!Number.isInteger(productId) || productId <= 0) {
+      return res.status(400).json({ error: "Invalid product id in cart." });
+    }
+
+    if (!Number.isFinite(pointCost) || pointCost < 0) {
+      return res.status(400).json({ error: "Invalid point cost in cart." });
+    }
+
+    if (!Number.isFinite(dollarCost) || dollarCost < 0) {
+      return res.status(400).json({ error: "Invalid dollar cost in cart." });
+    }
+
+    if (!Number.isInteger(qty) || qty <= 0) {
+      return res.status(400).json({ error: "Invalid quantity in cart." });
+    }
+
+    normalizedItems.push({
+      productId,
+      pointCost,
+      dollarCost,
+      qty
+    });
+  }
+
+  const conn = await pool.getConnection();
+
+  try {
+    await conn.beginTransaction();
+
+    const [driverRows] = await conn.query(
+      `SELECT
+         u.id AS user_id,
+         u.first_name,
+         u.last_name
+       FROM users u
+       JOIN user_sponsors us
+         ON us.user_id = u.id
+       WHERE u.id = ?
+         AND u.role = 'Driver'
+         AND us.sponsor_name = ?
+         AND us.status = 'Active'
+       LIMIT 1
+       FOR UPDATE`,
+      [Number(driver_user_id), me.sponsor]
+    );
+
+    if (driverRows.length === 0) {
+      await conn.rollback();
+      return res.status(404).json({ error: "Selected driver is not active for your sponsor." });
+    }
+
+    const driverUser = driverRows[0];
+
+    const [[actorUser]] = await conn.query(
+      `SELECT first_name, last_name
+       FROM users
+       WHERE id = ?
+       LIMIT 1`,
+      [me.id]
+    );
+
+    const actorName = `${actorUser?.first_name || ""} ${actorUser?.last_name || ""}`.trim() || "Sponsor user";
+
+    const itemsPointTotal = normalizedItems.reduce((sum, item) => {
+      return sum + (item.pointCost * item.qty);
+    }, 0);
+
+    const totalPointCost = itemsPointTotal + cleanShippingPointCost;
+
+    const [[wallet]] = await conn.query(
+      `SELECT points
+       FROM user_sponsors
+       WHERE user_id = ?
+         AND sponsor_name = ?
+         AND status = 'Active'
+       LIMIT 1
+       FOR UPDATE`,
+      [driverUser.user_id, me.sponsor]
+    );
+
+    if (!wallet) {
+      await conn.rollback();
+      return res.status(404).json({ error: "Driver sponsor wallet not found." });
+    }
+
+    const currentPoints = Number(wallet.points || 0);
+
+    if (totalPointCost > currentPoints) {
+      await conn.rollback();
+      return res.status(400).json({ error: "The selected driver does not have enough points." });
+    }
+
+    const remainingPoints = currentPoints - totalPointCost;
+
+    await conn.query(
+      `UPDATE user_sponsors
+       SET points = ?
+       WHERE user_id = ?
+         AND sponsor_name = ?`,
+      [remainingPoints, driverUser.user_id, me.sponsor]
+    );
+
+    const [[driverRow]] = await conn.query(
+      `SELECT id
+       FROM drivers
+       WHERE user_id = ?
+       LIMIT 1`,
+      [driverUser.user_id]
+    );
+
+    if (!driverRow) {
+      await conn.rollback();
+      return res.status(404).json({ error: "Driver record not found." });
+    }
+
+    await conn.query(
+      `INSERT INTO driver_point_history
+        (driver_id, sponsor_name, points_change, points_before, points_after, reason, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+      [
+        driverRow.id,
+        me.sponsor,
+        -totalPointCost,
+        currentPoints,
+        remainingPoints,
+        `Sponsor Purchase by ${actorName}`
+      ]
+    );
+
+    const [groupResult] = await conn.query(
+      `SELECT UUID() AS group_id`
+    );
+    const groupId = groupResult[0].group_id;
+
+    const now = new Date();
+
+    for (const item of normalizedItems) {
+      for (let i = 0; i < item.qty; i++) {
+        await conn.query(
+          `INSERT INTO orders
+             (
+               user_id,
+               sponsor_name,
+               product_id,
+               point_cost,
+               dollar_cost,
+               date_ordered,
+               group_id,
+               shipping_method,
+               expected_delivery_date
+             )
+           VALUES (?, ?, ?, ?, ?, NOW(), ?, ?, ?)`,
+          [
+            driverUser.user_id,
+            me.sponsor,
+            item.productId,
+            item.pointCost,
+            item.dollarCost,
+            groupId,
+            shipping_method,
+            expectedDeliveryDate
+          ]
+        );
+      }
+    }
+
+    if (cleanShippingPointCost > 0 || cleanShippingDollarCost > 0) {
+      await conn.query(
+        `INSERT INTO orders
+           (
+             user_id,
+             sponsor_name,
+             product_id,
+             point_cost,
+             dollar_cost,
+             date_ordered,
+             group_id,
+             shipping_method,
+             expected_delivery_date
+           )
+         VALUES (?, ?, ?, ?, ?, NOW(), ?, ?, ?)`,
+        [
+          driverUser.user_id,
+          me.sponsor,
+          0,
+          cleanShippingPointCost,
+          cleanShippingDollarCost,
+          groupId,
+          shipping_method,
+          expectedDeliveryDate
+        ]
+      );
+    }
+
+    await conn.query(
+      `INSERT INTO notifications
+        (
+          recipient_user_id,
+          actor_user_id,
+          type,
+          category,
+          title,
+          message,
+          related_entity_type,
+          related_entity_id,
+          scheduled_for
+        )
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+      [
+        driverUser.user_id,
+        me.id,
+        "sponsor_purchase",
+        "order",
+        "Item purchased for you",
+        `${actorName} has purchased an item on your behalf.`,
+        "order_group",
+        groupId
+      ]
+    );
+
+    await createOrderNotifications(conn, {
+      recipientUserId: driverUser.user_id,
+      actorUserId: me.id,
+      groupId,
+      shippingMethod: shipping_method,
+      expectedDeliveryDate,
+      dateOrdered: now
+    });
+
+    await conn.commit();
+    res.json({
+      ok: true,
+      groupId,
+      remainingPoints
+    });
+  } catch (err) {
+    await conn.rollback();
+    console.error("sponsor checkout error:", err);
+    res.status(500).json({ error: "Could not place sponsor order." });
+  } finally {
+    conn.release();
+  }
+});
 
 //Start server
 app.listen(PORT, "0.0.0.0", () => {
