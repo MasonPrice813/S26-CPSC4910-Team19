@@ -41,6 +41,48 @@
         </div>
 
         <div class="content-box">
+            <h2>Create Admin User</h2>
+            <p class="muted">Create a new administrator account.</p>
+
+            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:12px; margin-top:12px;">
+                <div>
+                    <label class="muted small" for="adminFirstName">First Name</label>
+                    <input id="adminFirstName" class="input" type="text" />
+                </div>
+
+                <div>
+                    <label class="muted small" for="adminLastName">Last Name</label>
+                    <input id="adminLastName" class="input" type="text" />
+                </div>
+
+                <div>
+                    <label class="muted small" for="adminUsername">Username</label>
+                    <input id="adminUsername" class="input" type="text" />
+                </div>
+
+                <div>
+                    <label class="muted small" for="adminEmail">Email</label>
+                    <input id="adminEmail" class="input" type="email" />
+                </div>
+
+                <div>
+                    <label class="muted small" for="adminPassword">Password</label>
+                    <input id="adminPassword" class="input" type="password" />
+                </div>
+
+                <div>
+                    <label class="muted small" for="adminPhone">Phone Number</label>
+                    <input id="adminPhone" class="input" type="text" />
+                </div>
+            </div>
+
+            <div style="margin-top:14px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                <button id="createAdminBtn" class="btn btn-primary" type="button">Create Admin</button>
+                <span id="createAdminMsg" class="muted small"></span>
+            </div>
+        </div>
+
+        <div class="content-box">
             <div id="results"></div>
         </div>
         <!-- Bug Reports Section -->

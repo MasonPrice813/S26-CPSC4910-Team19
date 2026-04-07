@@ -1056,6 +1056,76 @@ function roleTable(role) {
   return null;
 }
 
+app.post("/api/admin/users/admin", requireAdmin, async (req, res) => {
+  const {
+    first_name,
+    last_name,
+    username,
+    email,
+    password,
+    phone_number
+  } = req.body || {};
+
+  if (!first_name || !last_name || !username || !email || !password || !phone_number) {
+    return res.status(400).json({ error: "Missing required fields." });
+  }
+
+  const pw = String(password);
+  const strongPw = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
+
+  if (!strongPw.test(pw)) {
+    return res.status(400).json({
+      error: "Password must be at least 8 characters and include 1 uppercase letter, 1 lowercase letter, and 1 number."
+    });
+  }
+
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    const hashedPw = await bcrypt.hash(password, 12);
+
+    const [userResult] = await conn.query(
+      `INSERT INTO users
+         (role, first_name, last_name, username, email, password, phone_number, sponsor)
+       VALUES
+         (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        "Admin",
+        String(first_name).trim(),
+        String(last_name).trim(),
+        String(username).trim(),
+        String(email).trim(),
+        hashedPw,
+        String(phone_number).trim(),
+        null
+      ]
+    );
+
+    const newUserId = userResult.insertId;
+
+    await conn.query(
+      `INSERT INTO admins (user_id)
+       VALUES (?)`,
+      [newUserId]
+    );
+
+    await conn.commit();
+    res.status(201).json({ ok: true, user_id: newUserId });
+  } catch (err) {
+    await conn.rollback();
+
+    if (err && err.code === "ER_DUP_ENTRY") {
+      return res.status(409).json({ error: "Username or email already exists." });
+    }
+
+    console.error("create admin user error:", err);
+    res.status(500).json({ error: "Could not create admin user." });
+  } finally {
+    conn.release();
+  }
+});
+
 app.patch("/api/admin/users/:id/role", requireAdmin, async (req, res) => {
   const userId = Number(req.params.id);
   const newRole = String(req.body?.role || "").trim();
