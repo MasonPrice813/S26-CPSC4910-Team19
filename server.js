@@ -3060,6 +3060,7 @@ app.get('/api/admin/drivers', async (req, res) => {
   try {
     let query = `
       SELECT DISTINCT
+        d.id AS driver_id,
         u.id AS user_id,
         u.first_name,
         u.last_name,
@@ -3086,6 +3087,78 @@ app.get('/api/admin/drivers', async (req, res) => {
   } catch (err) {
     console.error('admin drivers error:', err);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get("/api/admin/points", requireAdmin, async (req, res) => {
+  try {
+    const view = String(req.query.view || "week");
+    const driver = String(req.query.driver || "all");
+    const sponsor = String(req.query.sponsor || "").trim();
+
+    if (!sponsor) {
+      return res.status(400).json({ error: "Sponsor is required." });
+    }
+
+    let dateFormat;
+    let groupBy;
+    let dateFilter;
+
+    if (view === "year") {
+      dateFormat = "%b";
+      groupBy = "MONTH(h.created_at)";
+      dateFilter = "YEAR(h.created_at) = YEAR(CURDATE())";
+    } else if (view === "month") {
+      dateFormat = "%u";
+      groupBy = "WEEK(h.created_at)";
+      dateFilter = "MONTH(h.created_at) = MONTH(CURDATE()) AND YEAR(h.created_at) = YEAR(CURDATE())";
+    } else {
+      dateFormat = "%a";
+      groupBy = "DAY(h.created_at)";
+      dateFilter = "YEARWEEK(h.created_at, 1) = YEARWEEK(CURDATE(), 1)";
+    }
+
+    let sql = "";
+    const params = [];
+
+    if (driver === "all") {
+      sql = `
+        SELECT
+          DATE_FORMAT(h.created_at, '${dateFormat}') AS label,
+          AVG(h.points_after) AS value
+        FROM driver_point_history h
+        WHERE ${dateFilter}
+          AND h.sponsor_name = ?
+        GROUP BY ${groupBy}
+        ORDER BY MIN(h.created_at)
+      `;
+      params.push(sponsor);
+    } else {
+      sql = `
+        SELECT
+          DATE_FORMAT(h.created_at, '${dateFormat}') AS label,
+          MAX(h.points_after) AS value
+        FROM driver_point_history h
+        JOIN drivers d
+          ON h.driver_id = d.id
+        JOIN user_sponsors us
+          ON us.user_id = d.user_id
+        WHERE h.driver_id = ?
+          AND ${dateFilter}
+          AND h.sponsor_name = ?
+          AND us.sponsor_name = ?
+          AND us.status = 'Active'
+        GROUP BY ${groupBy}
+        ORDER BY MIN(h.created_at)
+      `;
+      params.push(Number(driver), sponsor, sponsor);
+    }
+
+    const [rows] = await pool.query(sql, params);
+    res.json(rows);
+  } catch (err) {
+    console.error("admin points error:", err);
+    res.status(500).json({ error: "Database error" });
   }
 });
 

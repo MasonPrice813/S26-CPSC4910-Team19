@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Admin Reports</title>
   <link rel="stylesheet" href="/Website/about-style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 
 <body>
@@ -23,7 +24,7 @@
   <main class="container">
     <div class="content-box">
       <h2>Admin Reports</h2>
-      <p class="muted">View transaction history across all sponsor organizations and drivers.</p>
+      <p class="muted">View transaction history and point analytics across all sponsor organizations and drivers.</p>
 
         <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:12px;">
             <select id="sponsorFilter" class="input" style="min-width:220px;">
@@ -45,6 +46,36 @@
         </div>
 
       <p id="statusMsg" class="muted small" style="margin-top:10px;"></p>
+    </div>
+
+    <div id="pointsAnalyticsSection" class="content-box" style="display:none;">
+      <h2>Points Analytics</h2>
+      <p class="muted">Select a sponsor to view driver point history.</p>
+      <p id="pointsChartHint" class="muted small" style="margin-top:8px;">
+        Select a sponsor to view the points history chart.
+      </p>
+
+      <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:12px;">
+        <div style="min-width:220px;">
+          <label class="muted small" for="pointsTimeView">Time View</label>
+          <select id="pointsTimeView" class="input">
+            <option value="year">Year</option>
+            <option value="month">Month</option>
+            <option value="week">Week</option>
+          </select>
+        </div>
+
+        <div style="min-width:220px;">
+          <label class="muted small" for="pointsDriverFilter">Driver</label>
+          <select id="pointsDriverFilter" class="input">
+            <option value="all">All Drivers (Average)</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="margin-top:20px;">
+        <canvas id="adminPointsChart" height="100"></canvas>
+      </div>
     </div>
 
     <div class="content-box">

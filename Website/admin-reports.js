@@ -1,3 +1,12 @@
+const adminChartCtx = document.getElementById("adminPointsChart")?.getContext("2d");
+let adminPointsChart = null;
+let adminDriversCache = [];
+
+const pointsAnalyticsSection = document.getElementById("pointsAnalyticsSection");
+const pointsTimeView = document.getElementById("pointsTimeView");
+const pointsDriverFilter = document.getElementById("pointsDriverFilter");
+const pointsChartHint = document.getElementById("pointsChartHint");
+
 async function getJSON(url) {
   const res = await fetch(url, { credentials: "same-origin" });
   const data = await res.json().catch(() => ({}));
@@ -42,7 +51,7 @@ async function loadSponsors() {
 
 async function loadDrivers() {
   const sponsor = document.getElementById("sponsorFilter").value;
-  const select = document.getElementById("driverFilter");
+  const transactionDriverSelect = document.getElementById("driverFilter");
 
   let url = "/api/admin/drivers";
   if (sponsor) {
@@ -50,15 +59,18 @@ async function loadDrivers() {
   }
 
   const drivers = await getJSON(url);
+  adminDriversCache = Array.isArray(drivers) ? drivers : [];
 
-  select.innerHTML = `<option value="">All Drivers</option>`;
+  transactionDriverSelect.innerHTML = `<option value="">All Drivers</option>`;
 
-  drivers.forEach(d => {
+  adminDriversCache.forEach(d => {
     const option = document.createElement("option");
     option.value = d.user_id;
     option.textContent = `${d.first_name} ${d.last_name}`;
-    select.appendChild(option);
+    transactionDriverSelect.appendChild(option);
   });
+
+  populatePointsDriverFilter(adminDriversCache);
 }
 
 async function loadTransactions() {
@@ -163,6 +175,88 @@ async function loadDriverSponsorAffiliations() {
   }
 }
 
+function populatePointsDriverFilter(drivers) {
+  if (!pointsDriverFilter) return;
+
+  pointsDriverFilter.innerHTML = `<option value="all">All Drivers (Average)</option>`;
+
+  drivers.forEach(d => {
+    const option = document.createElement("option");
+    option.value = d.driver_id;
+    option.textContent = `${d.first_name} ${d.last_name}`;
+    pointsDriverFilter.appendChild(option);
+  });
+}
+
+async function fetchAdminPointsData(view, driverId, sponsor) {
+  if (!sponsor) return [];
+
+  const params = new URLSearchParams({
+    view,
+    driver: driverId,
+    sponsor
+  });
+
+  try {
+    return await getJSON(`/api/admin/points?${params.toString()}`);
+  } catch (err) {
+    console.error("Failed to load admin points data:", err);
+    return [];
+  }
+}
+
+async function renderAdminPointsChart() {
+  if (!adminChartCtx || !pointsTimeView || !pointsDriverFilter) return;
+
+  const sponsor = document.getElementById("sponsorFilter").value;
+  if (!sponsor) {
+    if (adminPointsChart) {
+      adminPointsChart.destroy();
+      adminPointsChart = null;
+    }
+    if (pointsAnalyticsSection) pointsAnalyticsSection.style.display = "none";
+    if (pointsChartHint) {
+      pointsChartHint.textContent = "Select a sponsor to view the points history chart.";
+    }
+    return;
+  }
+
+  if (pointsAnalyticsSection) pointsAnalyticsSection.style.display = "block";
+  if (pointsChartHint) {
+    pointsChartHint.textContent = `Viewing point history for ${sponsor}.`;
+  }
+
+  const view = pointsTimeView.value;
+  const driverId = pointsDriverFilter.value || "all";
+
+  const data = await fetchAdminPointsData(view, driverId, sponsor);
+  const labels = data.map(d => d.label);
+  const values = data.map(d => d.value);
+
+  if (adminPointsChart) {
+    adminPointsChart.destroy();
+  }
+
+  adminPointsChart = new Chart(adminChartCtx, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [{
+        label: driverId === "all"
+          ? `Average Points (${sponsor})`
+          : `Driver Points (${sponsor})`,
+        data: values,
+        borderWidth: 3,
+        tension: 0.3
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true
+    }
+  });
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
   loadMe().catch(console.warn);
 
@@ -176,17 +270,23 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   document.getElementById("sponsorFilter").addEventListener("change", async () => {
+    document.getElementById("driverFilter").value = "";
     await loadDrivers();
     await loadTransactions();
+    await renderAdminPointsChart();
   });
 
   document.getElementById("driverFilter").addEventListener("change", loadTransactions);
   document.getElementById("rangeFilter").addEventListener("change", loadTransactions);
 
+  pointsTimeView?.addEventListener("change", renderAdminPointsChart);
+  pointsDriverFilter?.addEventListener("change", renderAdminPointsChart);
+
   try {
     await loadSponsors();
     await loadDrivers();
     await loadTransactions();
+    await renderAdminPointsChart();
     await loadDriverSponsorAffiliations();
   } catch (err) {
     console.error(err);
