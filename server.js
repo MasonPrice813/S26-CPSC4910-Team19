@@ -1196,17 +1196,20 @@ app.delete("/api/admin/users/:id", requireAdmin, async (req, res) => {
   const userId = Number(req.params.id);
   if (!Number.isFinite(userId)) return res.status(400).json({ error: "Invalid user id" });
 
-  //Prevent deleting self
   if (req.me.id === userId) {
     return res.status(400).json({ error: "You cannot delete your own account." });
   }
 
   const conn = await pool.getConnection();
+
   try {
     await conn.beginTransaction();
 
     const [rows] = await conn.query(
-      `SELECT id, role FROM users WHERE id = ? FOR UPDATE`,
+      `SELECT id, role
+       FROM users
+       WHERE id = ?
+       FOR UPDATE`,
       [userId]
     );
     if (rows.length === 0) {
@@ -1215,20 +1218,79 @@ app.delete("/api/admin/users/:id", requireAdmin, async (req, res) => {
     }
 
     const role = rows[0].role;
-    const table = roleTable(role);
 
-    if (table) {
-      await conn.query(`DELETE FROM ${table} WHERE user_id = ?`, [userId]);
+    if (role === "Driver") {
+      const [driverRows] = await conn.query(
+        `SELECT id
+         FROM drivers
+         WHERE user_id = ?
+         FOR UPDATE`,
+        [userId]
+      );
+
+      if (driverRows.length > 0) {
+        const driverId = driverRows[0].id;
+
+        await conn.query(
+          `DELETE FROM driver_point_history
+           WHERE driver_id = ?`,
+          [driverId]
+        );
+
+        await conn.query(
+          `DELETE FROM drivers
+           WHERE user_id = ?`,
+          [userId]
+        );
+      }
+
+      await conn.query(
+        `DELETE FROM user_sponsors
+         WHERE user_id = ?`,
+        [userId]
+      );
+
+      await conn.query(
+        `DELETE FROM orders
+         WHERE user_id = ?`,
+        [userId]
+      );
     }
 
-    await conn.query(`DELETE FROM users WHERE id = ?`, [userId]);
+    if (role === "Sponsor") {
+      await conn.query(
+        `DELETE FROM sponsors
+         WHERE user_id = ?`,
+        [userId]
+      );
+    }
+
+    if (role === "Admin") {
+      await conn.query(
+        `DELETE FROM admins
+         WHERE user_id = ?`,
+        [userId]
+      );
+    }
+
+    await conn.query(
+      `DELETE FROM user_profiles
+       WHERE user_id = ?`,
+      [userId]
+    );
+
+    await conn.query(
+      `DELETE FROM users
+       WHERE id = ?`,
+      [userId]
+    );
 
     await conn.commit();
     res.json({ ok: true, deleted: userId });
   } catch (err) {
     await conn.rollback();
     console.error("admin delete user error:", err);
-    res.status(500).json({ error: "Could not delete user" });
+    res.status(500).json({ error: err.message || "Could not delete user" });
   } finally {
     conn.release();
   }
