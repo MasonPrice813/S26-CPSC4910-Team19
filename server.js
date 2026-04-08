@@ -18,6 +18,8 @@ const uploadText = multer({
  storage: storagebulk,
 });
 
+const PDFDocument = require("pdfkit");
+
 
 app.use(session({
   secret: process.env.SESSION_SECRET,
@@ -3780,6 +3782,427 @@ app.post("/api/sponsor/orders/checkout", requireSponsor, async (req, res) => {
     res.status(500).json({ error: "Could not place sponsor order." });
   } finally {
     conn.release();
+  }
+});
+
+function normalizeReportDate(value, endOfDay = false) {
+  if (!value) return null;
+
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return null;
+
+  if (endOfDay) {
+    date.setHours(23, 59, 59, 999);
+  } else {
+    date.setHours(0, 0, 0, 0);
+  }
+
+  return date;
+}
+
+function buildInClausePlaceholders(values) {
+  return values.map(() => "?").join(", ");
+}
+
+function truncatePdfText(value, maxLength = 24) {
+  const text = String(value ?? "—").trim();
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength - 3)}...`;
+}
+
+async function getSponsorReportData({
+  sponsorName,
+  includeTransactions,
+  includePointHistory,
+  startDate,
+  endDate,
+  driverIds
+}) {
+  const data = {
+    transactions: [],
+    pointHistory: []
+  };
+
+  const hasDriverFilter = Array.isArray(driverIds) && driverIds.length > 0;
+
+  if (includeTransactions) {
+    let sql = `
+      SELECT
+        u.id AS user_id,
+        CONCAT(u.first_name, ' ', u.last_name) AS driver_name,
+        o.product_id,
+        o.point_cost,
+        o.dollar_cost,
+        o.shipping_method,
+        o.date_ordered
+      FROM orders o
+      JOIN users u
+        ON u.id = o.user_id
+      JOIN user_sponsors us
+        ON us.user_id = u.id
+      WHERE us.sponsor_name = ?
+        AND us.status = 'Active'
+        AND u.role = 'Driver'
+    `;
+
+    const params = [sponsorName];
+
+    sql += ` AND o.sponsor_name = ?`;
+    params.push(sponsorName);
+
+    if (hasDriverFilter) {
+      sql += ` AND u.id IN (${buildInClausePlaceholders(driverIds)})`;
+      params.push(...driverIds);
+    }
+
+    if (startDate) {
+      sql += ` AND o.date_ordered >= ?`;
+      params.push(startDate);
+    }
+
+    if (endDate) {
+      sql += ` AND o.date_ordered <= ?`;
+      params.push(endDate);
+    }
+
+    sql += ` ORDER BY o.date_ordered DESC, u.last_name ASC, u.first_name ASC`;
+
+    const [rows] = await pool.query(sql, params);
+    data.transactions = rows;
+  }
+
+  if (includePointHistory) {
+    let sql = `
+      SELECT
+        u.id AS user_id,
+        CONCAT(u.first_name, ' ', u.last_name) AS driver_name,
+        h.points_change,
+        h.points_before,
+        h.points_after,
+        h.reason,
+        h.created_at
+      FROM driver_point_history h
+      JOIN drivers d
+        ON d.id = h.driver_id
+      JOIN users u
+        ON u.id = d.user_id
+      JOIN user_sponsors us
+        ON us.user_id = u.id
+      WHERE h.sponsor_name = ?
+        AND us.sponsor_name = ?
+        AND us.status = 'Active'
+        AND u.role = 'Driver'
+    `;
+
+    const params = [sponsorName, sponsorName];
+
+    if (hasDriverFilter) {
+      sql += ` AND u.id IN (${buildInClausePlaceholders(driverIds)})`;
+      params.push(...driverIds);
+    }
+
+    if (startDate) {
+      sql += ` AND h.created_at >= ?`;
+      params.push(startDate);
+    }
+
+    if (endDate) {
+      sql += ` AND h.created_at <= ?`;
+      params.push(endDate);
+    }
+
+    sql += ` ORDER BY h.created_at DESC, u.last_name ASC, u.first_name ASC`;
+
+    const [rows] = await pool.query(sql, params);
+    data.pointHistory = rows;
+  }
+
+  return data;
+}
+app.post("/api/sponsor/reports/pdf", requireSponsor, async (req, res) => {
+  try {
+    const sponsorName = req.session.user.sponsor;
+
+    const {
+      includeTransactions = false,
+      includePointHistory = false,
+      startDate = "",
+      endDate = "",
+      driverIds = []
+    } = req.body || {};
+
+    if (!includeTransactions && !includePointHistory) {
+      return res.status(400).json({ error: "Select at least one report category." });
+    }
+
+    const normalizedDriverIds = Array.isArray(driverIds)
+      ? driverIds.map(Number).filter(Number.isFinite)
+      : [];
+
+    const start = normalizeReportDate(startDate, false);
+    const end = normalizeReportDate(endDate, true);
+
+    if (startDate && !start) {
+      return res.status(400).json({ error: "Invalid start date." });
+    }
+
+    if (endDate && !end) {
+      return res.status(400).json({ error: "Invalid end date." });
+    }
+
+    if (start && end && start > end) {
+      return res.status(400).json({ error: "Start date cannot be after end date." });
+    }
+
+    const reportData = await getSponsorReportData({
+      sponsorName,
+      includeTransactions: !!includeTransactions,
+      includePointHistory: !!includePointHistory,
+      startDate: start,
+      endDate: end,
+      driverIds: normalizedDriverIds
+    });
+
+    const doc = new PDFDocument({
+      margin: 40,
+      size: "A4"
+    });
+
+    const filename = `sponsor-report-${Date.now()}.pdf`;
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+
+    doc.pipe(res);
+
+    const pageWidth = doc.page.width;
+    const pageHeight = doc.page.height;
+    const leftX = 40;
+    const usableWidth = pageWidth - 80;
+    const bottomLimit = pageHeight - 45;
+
+    function addPageIfNeeded(requiredHeight = 30) {
+      if (doc.y + requiredHeight > bottomLimit) {
+        doc.addPage();
+      }
+    }
+
+    function drawReportTitle() {
+      doc
+        .fillColor("#111827")
+        .font("Helvetica-Bold")
+        .fontSize(20)
+        .text("Sponsor Report", leftX, doc.y, {
+          width: usableWidth,
+          align: "center"
+        });
+
+      doc.moveDown(0.5);
+
+      doc
+        .font("Helvetica")
+        .fontSize(10)
+        .fillColor("#374151")
+        .text(`Sponsor: ${sponsorName}`)
+        .text(`Generated: ${new Date().toLocaleString("en-US")}`)
+        .text(`Date Range: ${startDate || "Beginning"} to ${endDate || "Today"}`)
+        .text(
+          `Included Sections: ${
+            [
+              includeTransactions ? "Transaction History" : null,
+              includePointHistory ? "Point Change History" : null
+            ].filter(Boolean).join(" + ")
+          }`
+        );
+
+      doc.moveDown(1);
+    }
+
+    function drawSectionTitle(title) {
+      addPageIfNeeded(40);
+
+      const y = doc.y;
+
+      doc.roundedRect(leftX, y, usableWidth, 26, 6).fill("#1f2937");
+
+      doc
+        .fillColor("#ffffff")
+        .font("Helvetica-Bold")
+        .fontSize(13)
+        .text(title, leftX + 10, y + 7, {
+          width: usableWidth - 20
+        });
+
+      doc.y = y + 34;
+      doc.fillColor("#111827");
+    }
+
+    function drawTableHeader(headers, widths) {
+      addPageIfNeeded(28);
+
+      const y = doc.y;
+      let x = leftX;
+
+      doc.rect(leftX, y, usableWidth, 26).fill("#e5e7eb");
+
+      doc.font("Helvetica-Bold").fontSize(10).fillColor("#111827");
+
+      headers.forEach((header, i) => {
+        doc.text(header, x + 6, y + 7, {
+          width: widths[i] - 12,
+          lineBreak: false,
+          ellipsis: true
+        });
+        x += widths[i];
+      });
+
+      doc
+        .strokeColor("#c7ccd4")
+        .lineWidth(1)
+        .rect(leftX, y, usableWidth, 26)
+        .stroke();
+
+      doc.y = y + 26;
+    }
+
+    function drawTableRow(values, widths, rowIndex) {
+      addPageIfNeeded(28);
+
+      const y = doc.y;
+      let x = leftX;
+      const rowHeight = 26;
+
+      if (rowIndex % 2 === 0) {
+        doc.rect(leftX, y, usableWidth, rowHeight).fill("#f9fafb");
+      } else {
+        doc.rect(leftX, y, usableWidth, rowHeight).fill("#ffffff");
+      }
+
+      doc.font("Helvetica").fontSize(10).fillColor("#111827");
+
+      values.forEach((value, i) => {
+        doc.text(String(value ?? "—"), x + 6, y + 7, {
+          width: widths[i] - 12,
+          lineBreak: false,
+          ellipsis: true
+        });
+        x += widths[i];
+      });
+
+      doc
+        .strokeColor("#d1d5db")
+        .lineWidth(1)
+        .rect(leftX, y, usableWidth, rowHeight)
+        .stroke();
+
+      doc.y = y + rowHeight;
+    }
+
+    function renderTransactionsSection(rows) {
+      drawSectionTitle("Transaction History");
+
+      if (!rows.length) {
+        doc
+          .font("Helvetica")
+          .fontSize(10)
+          .fillColor("#4b5563")
+          .text("No transaction history found for the selected filters.");
+        doc.moveDown(1);
+        return;
+      }
+
+      const headers = ["Driver", "Product ID", "Points", "Dollars", "Shipping", "Date"];
+      const widths = [155, 70, 65, 80, 85, 80];
+
+      drawTableHeader(headers, widths);
+
+      rows.forEach((row, index) => {
+        if (doc.y + 28 > bottomLimit) {
+          doc.addPage();
+          drawTableHeader(headers, widths);
+        }
+
+        drawTableRow(
+          [
+            truncatePdfText(row.driver_name, 28),
+            truncatePdfText(row.product_id, 12),
+            row.point_cost ?? "—",
+            `$${Number(row.dollar_cost || 0).toFixed(2)}`,
+            truncatePdfText(row.shipping_method || "—", 12),
+            row.date_ordered
+              ? new Date(row.date_ordered).toLocaleDateString("en-US")
+              : "—"
+          ],
+          widths,
+          index
+        );
+      });
+
+      doc.moveDown(1);
+    }
+
+    function renderPointHistorySection(rows) {
+      drawSectionTitle("Point Change History");
+
+      if (!rows.length) {
+        doc
+          .font("Helvetica")
+          .fontSize(10)
+          .fillColor("#4b5563")
+          .text("No point change history found for the selected filters.");
+        doc.moveDown(1);
+        return;
+      }
+
+      const headers = ["Driver", "Change", "Before", "After", "Reason", "Date"];
+      const widths = [125, 60, 60, 60, 155, 80];
+
+      drawTableHeader(headers, widths);
+
+      rows.forEach((row, index) => {
+        if (doc.y + 28 > bottomLimit) {
+          doc.addPage();
+          drawTableHeader(headers, widths);
+        }
+
+        const changeValue = Number(row.points_change || 0);
+        const signedChange = changeValue > 0 ? `+${changeValue}` : `${changeValue}`;
+
+        drawTableRow(
+          [
+            truncatePdfText(row.driver_name, 22),
+            signedChange,
+            row.points_before ?? "—",
+            row.points_after ?? "—",
+            truncatePdfText(row.reason || "—", 26),
+            row.created_at
+              ? new Date(row.created_at).toLocaleDateString("en-US")
+              : "—"
+          ],
+          widths,
+          index
+        );
+      });
+
+      doc.moveDown(1);
+    }
+
+    drawReportTitle();
+
+    if (includeTransactions) {
+      renderTransactionsSection(reportData.transactions);
+    }
+
+    if (includePointHistory) {
+      renderPointHistorySection(reportData.pointHistory);
+    }
+
+    doc.end();
+  } catch (err) {
+    console.error("sponsor pdf report error:", err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: "Could not generate PDF report." });
+    }
   }
 });
 

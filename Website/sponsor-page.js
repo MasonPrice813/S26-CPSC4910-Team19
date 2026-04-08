@@ -17,6 +17,16 @@ const transactionRangeFilter = document.getElementById("transactionRangeFilter")
 const pointsPerDollarInput = document.getElementById("pointsPerDollarInput");
 const currentRatioText = document.getElementById("currentRatioText");
 
+const includeTransactionsCheckbox = document.getElementById("includeTransactions");
+const includePointHistoryCheckbox = document.getElementById("includePointHistory");
+const reportStartDateInput = document.getElementById("reportStartDate");
+const reportEndDateInput = document.getElementById("reportEndDate");
+
+const reportAllDriversCheckbox = document.getElementById("reportAllDriversCheckbox");
+const reportDriverCheckboxList = document.getElementById("reportDriverCheckboxList");
+
+const generatePdfReportBtn = document.getElementById("generatePdfReportBtn");
+
 function formatNumber(value) {
   return Number(value || 0).toLocaleString("en-US");
 }
@@ -221,6 +231,14 @@ function populateDriverDropdowns(drivers) {
     transactionSelect.innerHTML = '<option value="all">All Drivers</option>';
   }
 
+  if (reportDriverCheckboxList) {
+    reportDriverCheckboxList.innerHTML = "";
+  }
+
+  if (reportAllDriversCheckbox) {
+    reportAllDriversCheckbox.checked = true;
+  }
+
   drivers.forEach(driver => {
     const label = `${driver.first_name || ""} ${driver.last_name || ""}`.trim();
     const pointsDriverId = driver.driver_id;
@@ -246,8 +264,123 @@ function populateDriverDropdowns(drivers) {
       txOption.textContent = label;
       transactionSelect.appendChild(txOption);
     }
+
+    if (reportDriverCheckboxList) {
+      const wrapper = document.createElement("label");
+      wrapper.style.display = "flex";
+      wrapper.style.alignItems = "center";
+      wrapper.style.gap = "10px";
+      wrapper.style.padding = "6px 0";
+      wrapper.style.width = "fit-content";
+
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.className = "report-driver-checkbox";
+      checkbox.value = userId;
+      checkbox.dataset.driverId = userId;
+      checkbox.style.width = "auto";
+      checkbox.style.margin = "0";
+      checkbox.style.flex = "0 0 auto";
+
+      checkbox.addEventListener("change", () => {
+        if (!reportAllDriversCheckbox) return;
+
+        if (checkbox.checked) {
+          reportAllDriversCheckbox.checked = false;
+        }
+
+        const anyChecked = reportDriverCheckboxList.querySelector(".report-driver-checkbox:checked");
+        if (!anyChecked) {
+          reportAllDriversCheckbox.checked = true;
+        }
+      });
+
+      const text = document.createElement("span");
+      text.textContent = label || `Driver ${userId}`;
+
+      wrapper.appendChild(checkbox);
+      wrapper.appendChild(text);
+      reportDriverCheckboxList.appendChild(wrapper);
+    }
   });
 }
+
+function getSelectedReportDriverIds() {
+  if (!reportDriverCheckboxList || !reportAllDriversCheckbox) return [];
+
+  if (reportAllDriversCheckbox.checked) {
+    return [];
+  }
+
+  const checkedBoxes = Array.from(
+    reportDriverCheckboxList.querySelectorAll(".report-driver-checkbox:checked")
+  );
+
+  if (!checkedBoxes.length) {
+    return [];
+  }
+
+  return checkedBoxes
+    .map(box => Number(box.value))
+    .filter(Number.isFinite);
+}
+
+async function generateSponsorPdfReport() {
+  const includeTransactions = !!includeTransactionsCheckbox?.checked;
+  const includePointHistory = !!includePointHistoryCheckbox?.checked;
+  const startDate = reportStartDateInput?.value || "";
+  const endDate = reportEndDateInput?.value || "";
+  const driverIds = getSelectedReportDriverIds();
+
+  if (!includeTransactions && !includePointHistory) {
+    alert("Select at least one report category.");
+    return;
+  }
+
+  if (startDate && endDate && startDate > endDate) {
+    alert("Start date cannot be after end date.");
+    return;
+  }
+
+  try {
+    const response = await fetch("/api/sponsor/reports/pdf", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        includeTransactions,
+        includePointHistory,
+        startDate,
+        endDate,
+        driverIds
+      })
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      alert(err.error || "Failed to generate PDF report.");
+      return;
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "sponsor-report.pdf";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    window.URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error("PDF report generation error:", err);
+    alert("Failed to generate PDF report.");
+  }
+}
+
+generatePdfReportBtn?.addEventListener("click", generateSponsorPdfReport);
 
 async function loadTransactions() {
   const tableBody = document.getElementById("transactionTableBody");
@@ -707,6 +840,18 @@ async function loadApplications() {
     `;
   }
 }
+
+reportAllDriversCheckbox?.addEventListener("change", () => {
+  if (!reportDriverCheckboxList) return;
+
+  const driverCheckboxes = reportDriverCheckboxList.querySelectorAll(".report-driver-checkbox");
+
+  if (reportAllDriversCheckbox.checked) {
+    driverCheckboxes.forEach(box => {
+      box.checked = false;
+    });
+  }
+});
 
 timeViewSelect?.addEventListener("change", renderChart);
 driverFilterSelect?.addEventListener("change", renderChart);
