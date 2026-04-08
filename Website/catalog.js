@@ -1645,7 +1645,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         });
       }
 
-      wireCatalogRequestUI();
+      if (CURRENT_USER_ROLE === "Driver") {
+        wireCatalogRequestUI();
+      }
     }
 
     const sponsorText = me.sponsor ? ` • ${me.sponsor}` : "";
