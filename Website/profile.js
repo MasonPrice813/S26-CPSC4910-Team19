@@ -195,7 +195,7 @@ function renderingSections() {
                         type="password"
                         name="newPassword"
                         minlength="8"
-                        pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}"
+                        pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\\d).{8,}"
                         title="Must be 8+ characters and include 1 uppercase letter, 1 lowercase letter, and 1 number."
                         required
                         />
@@ -208,7 +208,7 @@ function renderingSections() {
                         type="password"
                         name="confirmPassword"
                         minlength="8"
-                        pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}"
+                        pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\\d).{8,}"
                         title="Must be 8+ characters and include 1 uppercase letter, 1 lowercase letter, and 1 number."
                         required
                         />
