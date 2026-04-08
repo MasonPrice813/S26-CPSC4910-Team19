@@ -17,6 +17,13 @@ const transactionRangeFilter = document.getElementById("transactionRangeFilter")
 const pointsPerDollarInput = document.getElementById("pointsPerDollarInput");
 const currentRatioText = document.getElementById("currentRatioText");
 
+const includeTransactionsCheckbox = document.getElementById("includeTransactions");
+const includePointHistoryCheckbox = document.getElementById("includePointHistory");
+const reportStartDateInput = document.getElementById("reportStartDate");
+const reportEndDateInput = document.getElementById("reportEndDate");
+const reportDriverSelect = document.getElementById("reportDriverSelect");
+const generatePdfReportBtn = document.getElementById("generatePdfReportBtn");
+
 function formatNumber(value) {
   return Number(value || 0).toLocaleString("en-US");
 }
@@ -208,6 +215,7 @@ function populateDriverDropdowns(drivers) {
   const recurringSelect = document.getElementById("driverSelect");
   const chartSelect = document.getElementById("driverFilter");
   const transactionSelect = document.getElementById("transactionDriverFilter");
+  const reportSelect = document.getElementById("reportDriverSelect");
 
   if (recurringSelect) {
     recurringSelect.innerHTML = "";
@@ -219,6 +227,10 @@ function populateDriverDropdowns(drivers) {
 
   if (transactionSelect) {
     transactionSelect.innerHTML = '<option value="all">All Drivers</option>';
+  }
+
+  if (reportSelect) {
+    reportSelect.innerHTML = '<option value="all" selected>All Drivers</option>';
   }
 
   drivers.forEach(driver => {
@@ -246,8 +258,84 @@ function populateDriverDropdowns(drivers) {
       txOption.textContent = label;
       transactionSelect.appendChild(txOption);
     }
+
+    if (reportSelect) {
+      const reportOption = document.createElement("option");
+      reportOption.value = userId;
+      reportOption.textContent = label;
+      reportSelect.appendChild(reportOption);
+    }
   });
 }
+
+function getSelectedReportDriverIds() {
+  if (!reportDriverSelect) return [];
+
+  const selectedValues = Array.from(reportDriverSelect.selectedOptions).map(opt => opt.value);
+
+  if (selectedValues.includes("all") || selectedValues.length === 0) {
+    return [];
+  }
+
+  return selectedValues.map(v => Number(v)).filter(Number.isFinite);
+}
+
+async function generateSponsorPdfReport() {
+  const includeTransactions = !!includeTransactionsCheckbox?.checked;
+  const includePointHistory = !!includePointHistoryCheckbox?.checked;
+  const startDate = reportStartDateInput?.value || "";
+  const endDate = reportEndDateInput?.value || "";
+  const driverIds = getSelectedReportDriverIds();
+
+  if (!includeTransactions && !includePointHistory) {
+    alert("Select at least one report category.");
+    return;
+  }
+
+  if (startDate && endDate && startDate > endDate) {
+    alert("Start date cannot be after end date.");
+    return;
+  }
+
+  try {
+    const response = await fetch("/api/sponsor/reports/pdf", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        includeTransactions,
+        includePointHistory,
+        startDate,
+        endDate,
+        driverIds
+      })
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      alert(err.error || "Failed to generate PDF report.");
+      return;
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "sponsor-report.pdf";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    window.URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error("PDF report generation error:", err);
+    alert("Failed to generate PDF report.");
+  }
+}
+
+generatePdfReportBtn?.addEventListener("click", generateSponsorPdfReport);
 
 async function loadTransactions() {
   const tableBody = document.getElementById("transactionTableBody");

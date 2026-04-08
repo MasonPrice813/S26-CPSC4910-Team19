@@ -30,7 +30,7 @@
       flex-wrap: wrap;
     }
 
-    select, textarea {
+    select, textarea, input[type="date"], input[type="text"], input[type="number"] {
       background: rgba(0,0,0,.35);
       color: var(--text);
       border: 1px solid rgba(255,255,255,.14);
@@ -154,6 +154,48 @@
           </thead>
           <tbody id="transactionTableBody"></tbody>
         </table>
+      </div>
+    </section>
+
+    <section class="content-box">
+      <h2>Generate Reports</h2>
+
+      <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:12px;">
+        <label style="display:flex; align-items:center; gap:8px;">
+          <input type="checkbox" id="includeTransactions" checked />
+          <span>Transaction History</span>
+        </label>
+
+        <label style="display:flex; align-items:center; gap:8px;">
+          <input type="checkbox" id="includePointHistory" checked />
+          <span>Point Change History</span>
+        </label>
+      </div>
+
+      <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:16px;">
+        <div style="min-width:220px; flex:1 1 220px;">
+          <label class="muted small" for="reportStartDate">Start Date</label>
+          <input type="date" id="reportStartDate" />
+        </div>
+
+        <div style="min-width:220px; flex:1 1 220px;">
+          <label class="muted small" for="reportEndDate">End Date</label>
+          <input type="date" id="reportEndDate" />
+        </div>
+      </div>
+
+      <div style="margin-top:16px;">
+        <label class="muted small" for="reportDriverSelect">Drivers</label>
+        <select id="reportDriverSelect" multiple style="min-height:160px;">
+          <option value="all">All Drivers</option>
+        </select>
+        <div class="muted small" style="margin-top:6px;">
+          Hold Command/Ctrl to select multiple drivers.
+        </div>
+      </div>
+
+      <div style="margin-top:16px; display:flex; gap:10px; flex-wrap:wrap;">
+        <button id="generatePdfReportBtn" class="btn btn-primary">Generate PDF Report</button>
       </div>
     </section>
 
