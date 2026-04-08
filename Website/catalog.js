@@ -1638,7 +1638,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       renderCartPanel();
 
-      if (transactionHistoryBtn) {
+      if (transactionHistoryBtn && CURRENT_USER_ROLE === "Driver") {
         transactionHistoryBtn.style.display = "inline-block";
         transactionHistoryBtn.addEventListener("click", () => {
           window.location.href = "/Website/transaction-history.html";
