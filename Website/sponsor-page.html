@@ -185,12 +185,49 @@
       </div>
 
       <div style="margin-top:16px;">
-        <label class="muted small" for="reportDriverSelect">Drivers</label>
-        <select id="reportDriverSelect" multiple style="min-height:160px;">
-          <option value="all">All Drivers</option>
-        </select>
+        <label class="muted small">Drivers</label>
+
+        <div
+          style="
+            margin-top:10px;
+            padding:12px 14px;
+            border: 1px solid rgba(255,255,255,.14);
+            border-radius: 12px;
+            background: rgba(0,0,0,.18);
+          "
+        >
+          <label
+            for="reportAllDriversCheckbox"
+            style="
+              display:flex;
+              align-items:center;
+              gap:10px;
+              padding:6px 0;
+              margin-bottom:10px;
+              width:fit-content;
+            "
+          >
+            <input
+              type="checkbox"
+              id="reportAllDriversCheckbox"
+              checked
+              style="width:auto; margin:0; flex:0 0 auto;"
+            />
+            <span>All Drivers</span>
+          </label>
+
+          <div
+            id="reportDriverCheckboxList"
+            style="
+              display:flex;
+              flex-direction:column;
+              gap:10px;
+            "
+          ></div>
+        </div>
+
         <div class="muted small" style="margin-top:6px;">
-          Hold Command/Ctrl to select multiple drivers.
+          Select one, multiple, or all drivers.
         </div>
       </div>
 

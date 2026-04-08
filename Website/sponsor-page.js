@@ -21,7 +21,10 @@ const includeTransactionsCheckbox = document.getElementById("includeTransactions
 const includePointHistoryCheckbox = document.getElementById("includePointHistory");
 const reportStartDateInput = document.getElementById("reportStartDate");
 const reportEndDateInput = document.getElementById("reportEndDate");
-const reportDriverSelect = document.getElementById("reportDriverSelect");
+
+const reportAllDriversCheckbox = document.getElementById("reportAllDriversCheckbox");
+const reportDriverCheckboxList = document.getElementById("reportDriverCheckboxList");
+
 const generatePdfReportBtn = document.getElementById("generatePdfReportBtn");
 
 function formatNumber(value) {
@@ -215,7 +218,6 @@ function populateDriverDropdowns(drivers) {
   const recurringSelect = document.getElementById("driverSelect");
   const chartSelect = document.getElementById("driverFilter");
   const transactionSelect = document.getElementById("transactionDriverFilter");
-  const reportSelect = document.getElementById("reportDriverSelect");
 
   if (recurringSelect) {
     recurringSelect.innerHTML = "";
@@ -229,8 +231,12 @@ function populateDriverDropdowns(drivers) {
     transactionSelect.innerHTML = '<option value="all">All Drivers</option>';
   }
 
-  if (reportSelect) {
-    reportSelect.innerHTML = '<option value="all" selected>All Drivers</option>';
+  if (reportDriverCheckboxList) {
+    reportDriverCheckboxList.innerHTML = "";
+  }
+
+  if (reportAllDriversCheckbox) {
+    reportAllDriversCheckbox.checked = true;
   }
 
   drivers.forEach(driver => {
@@ -259,25 +265,64 @@ function populateDriverDropdowns(drivers) {
       transactionSelect.appendChild(txOption);
     }
 
-    if (reportSelect) {
-      const reportOption = document.createElement("option");
-      reportOption.value = userId;
-      reportOption.textContent = label;
-      reportSelect.appendChild(reportOption);
+    if (reportDriverCheckboxList) {
+      const wrapper = document.createElement("label");
+      wrapper.style.display = "flex";
+      wrapper.style.alignItems = "center";
+      wrapper.style.gap = "10px";
+      wrapper.style.padding = "6px 0";
+      wrapper.style.width = "fit-content";
+
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.className = "report-driver-checkbox";
+      checkbox.value = userId;
+      checkbox.dataset.driverId = userId;
+      checkbox.style.width = "auto";
+      checkbox.style.margin = "0";
+      checkbox.style.flex = "0 0 auto";
+
+      checkbox.addEventListener("change", () => {
+        if (!reportAllDriversCheckbox) return;
+
+        if (checkbox.checked) {
+          reportAllDriversCheckbox.checked = false;
+        }
+
+        const anyChecked = reportDriverCheckboxList.querySelector(".report-driver-checkbox:checked");
+        if (!anyChecked) {
+          reportAllDriversCheckbox.checked = true;
+        }
+      });
+
+      const text = document.createElement("span");
+      text.textContent = label || `Driver ${userId}`;
+
+      wrapper.appendChild(checkbox);
+      wrapper.appendChild(text);
+      reportDriverCheckboxList.appendChild(wrapper);
     }
   });
 }
 
 function getSelectedReportDriverIds() {
-  if (!reportDriverSelect) return [];
+  if (!reportDriverCheckboxList || !reportAllDriversCheckbox) return [];
 
-  const selectedValues = Array.from(reportDriverSelect.selectedOptions).map(opt => opt.value);
-
-  if (selectedValues.includes("all") || selectedValues.length === 0) {
+  if (reportAllDriversCheckbox.checked) {
     return [];
   }
 
-  return selectedValues.map(v => Number(v)).filter(Number.isFinite);
+  const checkedBoxes = Array.from(
+    reportDriverCheckboxList.querySelectorAll(".report-driver-checkbox:checked")
+  );
+
+  if (!checkedBoxes.length) {
+    return [];
+  }
+
+  return checkedBoxes
+    .map(box => Number(box.value))
+    .filter(Number.isFinite);
 }
 
 async function generateSponsorPdfReport() {
@@ -795,6 +840,18 @@ async function loadApplications() {
     `;
   }
 }
+
+reportAllDriversCheckbox?.addEventListener("change", () => {
+  if (!reportDriverCheckboxList) return;
+
+  const driverCheckboxes = reportDriverCheckboxList.querySelectorAll(".report-driver-checkbox");
+
+  if (reportAllDriversCheckbox.checked) {
+    driverCheckboxes.forEach(box => {
+      box.checked = false;
+    });
+  }
+});
 
 timeViewSelect?.addEventListener("change", renderChart);
 driverFilterSelect?.addEventListener("change", renderChart);
