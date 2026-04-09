@@ -1018,15 +1018,28 @@ async function openHiddenItemsView() {
       body.querySelectorAll(".restore-item-btn").forEach((btn) => {
         btn.addEventListener("click", async () => {
           const productId = Number(btn.dataset.id);
+          const row = btn.closest("div");
 
           try {
+            btn.disabled = true;
+            btn.textContent = "Re-adding...";
+
             await restoreCatalogItem(productId);
             HIDDEN_PRODUCT_IDS.delete(productId);
             applyFilters();
-            overlay.remove();
+
+            if (row) {
+              row.remove();
+            }
+
+            if (!body.querySelector(".restore-item-btn")) {
+              body.innerHTML = `<p class="muted">There are no hidden items for your sponsor right now.</p>`;
+            }
           } catch (err) {
             console.error(err);
             alert("Could not restore item for this sponsor.");
+            btn.disabled = false;
+            btn.textContent = "Re-add";
           }
         });
       });
