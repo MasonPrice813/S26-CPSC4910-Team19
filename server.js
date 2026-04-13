@@ -1296,123 +1296,6 @@ app.delete("/api/admin/users/:id", requireAdmin, async (req, res) => {
   }
 });
 
-app.get('/api/admin/audit-logs', (req, res, next) => next(), async (req, res) => {
-  try {
-    const {
-      event_type,
-      sponsor,
-      status,
-      date_from,
-      date_to,
-      search,
-    } = req.query;
-
-    const page   = Math.max(1,   parseInt(req.query.page,  10) || 1);
-    const limit  = Math.min(200, parseInt(req.query.limit, 10) || 50);
-    const offset = (page - 1) * limit;
-
-    const VALID_EVENT_TYPES = new Set([
-      'login', 'login_failed', 'logout',
-      'purchase', 'driver_application', 'account_created',
-    ]);
-    const VALID_STATUSES = new Set(['success', 'failure', 'pending']);
-
-    const conditions = [];
-    const params     = [];
-
-    if (event_type && VALID_EVENT_TYPES.has(event_type)) {
-      conditions.push('al.event_type = ?');
-      params.push(event_type);
-    }
-    if (sponsor && typeof sponsor === 'string' && sponsor.trim()) {
-      conditions.push('al.sponsor_name = ?');
-      params.push(sponsor.trim());
-    }
-    if (status && VALID_STATUSES.has(status)) {
-      conditions.push('al.status = ?');
-      params.push(status);
-    }
-    if (date_from) {
-      conditions.push('al.created_at >= ?');
-      params.push(new Date(date_from + 'T00:00:00'));
-    }
-    if (date_to) {
-      conditions.push('al.created_at <= ?');
-      params.push(new Date(date_to + 'T23:59:59'));
-    }
-    if (search && typeof search === 'string' && search.trim()) {
-      conditions.push('(al.description LIKE ? OR al.user_email LIKE ?)');
-      const like = `%${search.trim().slice(0, 100)}%`;
-      params.push(like, like);
-    }
-
-    const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
-
-    // Total count
-    const [[{ total }]] = await pool.query(
-      `SELECT COUNT(*) AS total FROM audit_logs al ${where}`,
-      params
-    );
-
-    // Page of rows — parse metadata JSON so the client gets a real object
-    const [rows] = await pool.query(
-      `SELECT
-         al.id,
-         al.event_type,
-         al.description,
-         al.status,
-         al.sponsor_name,
-         al.ip_address,
-         al.created_at,
-         al.metadata,
-         al.user_id,
-         COALESCE(u.email,      al.user_email) AS user_email,
-         COALESCE(u.role,       al.user_role)  AS user_role,
-         CONCAT(COALESCE(u.first_name,''), ' ', COALESCE(u.last_name,'')) AS user_name
-       FROM audit_logs al
-       LEFT JOIN users u ON u.id = al.user_id
-       ${where}
-       ORDER BY al.created_at DESC
-       LIMIT ? OFFSET ?`,
-      [...params, limit, offset]
-    );
-
-    // Parse metadata string → object for each row
-    const data = rows.map(r => ({
-      ...r,
-      metadata: r.metadata
-        ? (typeof r.metadata === 'string' ? JSON.parse(r.metadata) : r.metadata)
-        : null,
-    }));
-
-    res.json({
-      data,
-      pagination: { total, page, limit, pages: Math.ceil(total / limit) },
-    });
-  } catch (err) {
-    console.error('audit-logs GET error:', err);
-    res.status(500).json({ error: 'Database error' });
-  }
-});
-
-
-// ── GET /api/admin/audit-logs/sponsors ───────────────────────
-app.get('/api/admin/audit-logs/sponsors', (req, res, next) => next(), async (req, res) => {
-  try {
-    const [rows] = await pool.query(
-      `SELECT DISTINCT sponsor_name
-       FROM user_sponsors
-       WHERE sponsor_name IS NOT NULL
-         AND sponsor_name != ''
-       ORDER BY sponsor_name ASC`
-    );
-    res.json(rows.map(r => r.sponsor_name));
-  } catch (err) {
-    console.error('audit-logs sponsors error:', err);
-    res.status(500).json({ error: 'Database error' });
-  }
-});
-
 // Getting data from the graph in week, month, year spans for each driver and average
 app.get("/api/points", async (req, res) => {
   try {
@@ -4265,6 +4148,302 @@ app.post("/api/sponsor/reports/pdf", requireSponsor, async (req, res) => {
     if (!res.headersSent) {
       res.status(500).json({ error: "Could not generate PDF report." });
     }
+  }
+});
+
+app.get("/api/admin/audit-logs", requireAdmin, async (req, res) => {
+  try {
+    const {
+      event_type,
+      sponsor,
+      status,
+      date_from,
+      date_to,
+      search
+    } = req.query || {};
+
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(200, parseInt(req.query.limit, 10) || 50);
+    const offset = (page - 1) * limit;
+
+    const validEventTypes = new Set([
+      "login",
+      "login_failed",
+      "logout",
+      "purchase",
+      "driver_application",
+      "account_created"
+    ]);
+
+    const validStatuses = new Set(["success", "failure", "pending"]);
+
+    const eventFilter = validEventTypes.has(String(event_type || ""))
+      ? String(event_type)
+      : null;
+
+    const statusFilter = validStatuses.has(String(status || ""))
+      ? String(status)
+      : null;
+
+    const sponsorFilter = String(sponsor || "").trim() || null;
+    const searchFilter = String(search || "").trim() || null;
+
+    const fromDate = date_from ? new Date(`${date_from}T00:00:00`) : null;
+    const toDate = date_to ? new Date(`${date_to}T23:59:59`) : null;
+
+    const sources = [];
+    const sourceParams = [];
+
+    // ---------------- LOGIN ATTEMPTS ----------------
+    sources.push(`
+      SELECT
+        CONCAT('login_', LOWER(la.status), '_', la.id) AS source_key,
+        CASE
+          WHEN la.status = 'SUCCESS' THEN 'login'
+          ELSE 'login_failed'
+        END AS event_type,
+        CASE
+          WHEN la.status = 'SUCCESS' THEN 'Login successful'
+          ELSE 'Login failed'
+        END AS description,
+        LOWER(la.status) AS status,
+        NULL AS sponsor_name,
+        NULL AS ip_address,
+        la.attempt_time AS created_at,
+        NULL AS metadata,
+        u.id AS user_id,
+        COALESCE(u.email, la.username) AS user_email,
+        u.role AS user_role,
+        TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))) AS user_name
+      FROM login_attempts la
+      LEFT JOIN users u
+        ON u.username = la.username
+      WHERE 1=1
+        ${eventFilter ? `AND CASE WHEN la.status = 'SUCCESS' THEN 'login' ELSE 'login_failed' END = ?` : ""}
+        ${statusFilter ? `AND LOWER(la.status) = ?` : ""}
+        ${fromDate ? `AND la.attempt_time >= ?` : ""}
+        ${toDate ? `AND la.attempt_time <= ?` : ""}
+        ${searchFilter ? `AND (
+          la.username LIKE ?
+          OR COALESCE(u.email, '') LIKE ?
+          OR COALESCE(u.first_name, '') LIKE ?
+          OR COALESCE(u.last_name, '') LIKE ?
+        )` : ""}
+    `);
+
+    if (eventFilter) sourceParams.push(eventFilter);
+    if (statusFilter) sourceParams.push(statusFilter);
+    if (fromDate) sourceParams.push(fromDate);
+    if (toDate) sourceParams.push(toDate);
+    if (searchFilter) {
+      const like = `%${searchFilter}%`;
+      sourceParams.push(like, like, like, like);
+    }
+
+    // ---------------- PURCHASES ----------------
+    sources.push(`
+      SELECT
+        CONCAT('purchase_', o.group_id) AS source_key,
+        'purchase' AS event_type,
+        CONCAT(
+          'Catalog checkout (',
+          COUNT(*) ,
+          ' item',
+          IF(COUNT(*) = 1, '', 's'),
+          ', ',
+          o.shipping_method,
+          ')'
+        ) AS description,
+        'success' AS status,
+        o.sponsor_name AS sponsor_name,
+        NULL AS ip_address,
+        MAX(o.date_ordered) AS created_at,
+        JSON_OBJECT(
+          'points_spent', COALESCE(SUM(o.point_cost), 0),
+          'dollars_spent', COALESCE(SUM(o.dollar_cost), 0),
+          'item_count', COUNT(*),
+          'group_id', o.group_id,
+          'shipping_method', MAX(o.shipping_method)
+        ) AS metadata,
+        u.id AS user_id,
+        u.email AS user_email,
+        u.role AS user_role,
+        TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))) AS user_name
+      FROM orders o
+      JOIN users u
+        ON u.id = o.user_id
+      WHERE 1=1
+        ${eventFilter ? `AND 'purchase' = ?` : ""}
+        ${statusFilter ? `AND 'success' = ?` : ""}
+        ${sponsorFilter ? `AND o.sponsor_name = ?` : ""}
+        ${fromDate ? `AND o.date_ordered >= ?` : ""}
+        ${toDate ? `AND o.date_ordered <= ?` : ""}
+        ${searchFilter ? `AND (
+          u.email LIKE ?
+          OR u.first_name LIKE ?
+          OR u.last_name LIKE ?
+          OR o.group_id LIKE ?
+          OR o.sponsor_name LIKE ?
+        )` : ""}
+      GROUP BY
+        o.group_id,
+        o.sponsor_name,
+        u.id,
+        u.email,
+        u.role,
+        u.first_name,
+        u.last_name
+    `);
+
+    if (eventFilter) sourceParams.push("purchase");
+    if (statusFilter) sourceParams.push("success");
+    if (sponsorFilter) sourceParams.push(sponsorFilter);
+    if (fromDate) sourceParams.push(fromDate);
+    if (toDate) sourceParams.push(toDate);
+    if (searchFilter) {
+      const like = `%${searchFilter}%`;
+      sourceParams.push(like, like, like, like, like);
+    }
+
+    // ---------------- DRIVER APPLICATIONS ----------------
+    sources.push(`
+      SELECT
+        CONCAT('application_', a.id) AS source_key,
+        'driver_application' AS event_type,
+        CONCAT('Driver application submitted for ', aps.sponsor_name) AS description,
+        LOWER(a.status) AS status,
+        aps.sponsor_name AS sponsor_name,
+        NULL AS ip_address,
+        a.created_at AS created_at,
+        NULL AS metadata,
+        NULL AS user_id,
+        a.email AS user_email,
+        a.role AS user_role,
+        TRIM(CONCAT(COALESCE(a.first_name, ''), ' ', COALESCE(a.last_name, ''))) AS user_name
+      FROM applications a
+      JOIN application_sponsors aps
+        ON aps.application_id = a.id
+      WHERE a.role = 'Driver'
+        ${eventFilter ? `AND 'driver_application' = ?` : ""}
+        ${statusFilter ? `AND LOWER(a.status) = ?` : ""}
+        ${sponsorFilter ? `AND aps.sponsor_name = ?` : ""}
+        ${fromDate ? `AND a.created_at >= ?` : ""}
+        ${toDate ? `AND a.created_at <= ?` : ""}
+        ${searchFilter ? `AND (
+          a.email LIKE ?
+          OR a.first_name LIKE ?
+          OR a.last_name LIKE ?
+          OR aps.sponsor_name LIKE ?
+        )` : ""}
+    `);
+
+    if (eventFilter) sourceParams.push("driver_application");
+    if (statusFilter) sourceParams.push(statusFilter);
+    if (sponsorFilter) sourceParams.push(sponsorFilter);
+    if (fromDate) sourceParams.push(fromDate);
+    if (toDate) sourceParams.push(toDate);
+    if (searchFilter) {
+      const like = `%${searchFilter}%`;
+      sourceParams.push(like, like, like, like);
+    }
+
+    // ---------------- ACCOUNT CREATED ----------------
+    sources.push(`
+      SELECT
+        CONCAT('user_', u.id) AS source_key,
+        'account_created' AS event_type,
+        CONCAT('Account created (', u.role, ')') AS description,
+        'success' AS status,
+        u.sponsor AS sponsor_name,
+        NULL AS ip_address,
+        u.time_created AS created_at,
+        NULL AS metadata,
+        u.id AS user_id,
+        u.email AS user_email,
+        u.role AS user_role,
+        TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))) AS user_name
+      FROM users u
+      WHERE 1=1
+        ${eventFilter ? `AND 'account_created' = ?` : ""}
+        ${statusFilter ? `AND 'success' = ?` : ""}
+        ${sponsorFilter ? `AND u.sponsor = ?` : ""}
+        ${fromDate ? `AND u.time_created >= ?` : ""}
+        ${toDate ? `AND u.time_created <= ?` : ""}
+        ${searchFilter ? `AND (
+          u.email LIKE ?
+          OR u.username LIKE ?
+          OR u.first_name LIKE ?
+          OR u.last_name LIKE ?
+        )` : ""}
+    `);
+
+    if (eventFilter) sourceParams.push("account_created");
+    if (statusFilter) sourceParams.push("success");
+    if (sponsorFilter) sourceParams.push(sponsorFilter);
+    if (fromDate) sourceParams.push(fromDate);
+    if (toDate) sourceParams.push(toDate);
+    if (searchFilter) {
+      const like = `%${searchFilter}%`;
+      sourceParams.push(like, like, like, like);
+    }
+
+    const unionSql = sources.join("\nUNION ALL\n");
+
+    const countSql = `
+      SELECT COUNT(*) AS total
+      FROM (
+        ${unionSql}
+      ) combined
+    `;
+
+    const dataSql = `
+      SELECT *
+      FROM (
+        ${unionSql}
+      ) combined
+      ORDER BY created_at DESC
+      LIMIT ? OFFSET ?
+    `;
+
+    const [[countRow]] = await pool.query(countSql, sourceParams);
+    const [rows] = await pool.query(dataSql, [...sourceParams, limit, offset]);
+
+    const data = rows.map((row) => ({
+      ...row,
+      metadata:
+        row.metadata && typeof row.metadata === "string"
+          ? JSON.parse(row.metadata)
+          : row.metadata || null
+    }));
+
+    res.json({
+      data,
+      pagination: {
+        total: Number(countRow.total || 0),
+        page,
+        limit,
+        pages: Math.ceil(Number(countRow.total || 0) / limit)
+      }
+    });
+  } catch (err) {
+    console.error("audit-logs GET error:", err);
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
+app.get('/api/admin/audit-logs/sponsors', (req, res, next) => next(), async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT DISTINCT sponsor_name
+       FROM user_sponsors
+       WHERE sponsor_name IS NOT NULL
+         AND sponsor_name != ''
+       ORDER BY sponsor_name ASC`
+    );
+    res.json(rows.map(r => r.sponsor_name));
+  } catch (err) {
+    console.error('audit-logs sponsors error:', err);
+    res.status(500).json({ error: 'Database error' });
   }
 });
 
