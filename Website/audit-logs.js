@@ -274,7 +274,31 @@
   filterSearch.addEventListener('keydown', e => { if (e.key === 'Enter') fetchLogs(1); });
 
   // ── Init ─────────────────────────────────────────────────────
-  loadSponsorChips();
-  fetchLogs(1);
+  async function init() {
+    try {
+      const meRes = await fetch('/api/me', { credentials: 'same-origin' });
+
+      if (!meRes.ok) {
+        window.location.href = '/Website/login.html';
+        return;
+      }
+
+      const me = await meRes.json();
+
+      if (me.role !== 'Admin') {
+        alert('This page is only accessible to admin users.');
+        window.location.href = '/Website/catalog.html';
+        return;
+      }
+      document.body.classList.add('authorized');
+      await loadSponsorChips();
+      await fetchLogs(1);
+    } catch (err) {
+      console.error('audit-logs init error:', err);
+      window.location.href = '/Website/login.html';
+    }
+  }
+
+  init();
 
 })();

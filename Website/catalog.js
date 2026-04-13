@@ -1183,19 +1183,6 @@ function wireCatalogRequestUI() {
   });
 }
 
-async function setupAdminButton() {
-  const res = await fetch('/api/me');
-  const user = await res.json();
-
-  if (user.role === 'Admin') {
-    const btn = document.getElementById('adminReportsBtn');
-    btn.style.display = 'block';
-
-    btn.onclick = () => {
-      window.location.href = '/Website/admin-reports.html';
-    };
-  }
-}
 
 function getSavedActiveAdminSponsor() {
   if (!CURRENT_USER_ID) return null;
@@ -1391,7 +1378,6 @@ function refreshActiveSponsorDriverPoints() {
   updatePointsDisplay();
 }
 
-setupAdminButton();
 
 document.addEventListener("DOMContentLoaded", async () => {
   const meBadge = document.getElementById("meBadge");
@@ -1421,6 +1407,12 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   const notificationsBtn = document.getElementById("notificationsBtn");
   const notificationCount = document.getElementById("notificationCount");
+
+  const adminMenuWrap = document.getElementById("adminMenuWrap");
+  const adminMenuBtn = document.getElementById("adminMenuBtn");
+  const adminDropdown = document.getElementById("adminDropdown");
+  const adminReportsBtn = document.getElementById("adminReportsBtn");
+  const auditLogsBtn = document.getElementById("auditLogsBtn");
 
 
   
@@ -1676,10 +1668,32 @@ document.addEventListener("DOMContentLoaded", async () => {
   await loadNotificationCount();
 }
 
-    if (me.role === "Admin") {
-      manageUsersBtn.style.display = "inline-block";
+     if (me.role === "Admin") {
+      adminMenuWrap.style.display = "inline-block";
+
+      adminMenuBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        adminDropdown.classList.toggle("show");
+      });
+
       manageUsersBtn.addEventListener("click", () => {
         window.location.href = "/Website/admin-users.html";
+      });
+
+      adminReportsBtn.addEventListener("click", () => {
+        window.location.href = "/Website/admin-reports.html";
+      });
+
+      auditLogsBtn.addEventListener("click", () => {
+        window.location.href = "/Website/audit-logs.html";
+      });
+
+      document.addEventListener("click", () => {
+        adminDropdown.classList.remove("show");
+      });
+
+      adminDropdown.addEventListener("click", (e) => {
+        e.stopPropagation();
       });
     }
 

@@ -19,12 +19,26 @@
 
     <div class="right" style="display:flex; gap:10px; align-items:center; flex-wrap:nowrap; white-space:nowrap;">
 
-        <button id="manageUsersBtn" class="btn btn-primary" style="display:none;">
-            Manage Users
-        </button>
+        <div id="adminMenuWrap" class="sponsor-menu" style="display:none;">
+            <button id="adminMenuBtn" class="btn btn-primary sponsor-menu-btn" type="button">
+                Admin Pages <span class="caret">▼</span>
+            </button>
 
-        <button id="adminReportsBtn" class="btn btn-primary" style="display:none;">Admin Reports</button>
+            <div id="adminDropdown" class="sponsor-dropdown">
+                <button id="manageUsersBtn" class="sponsor-dropdown-item" type="button">
+                    Manage Users
+                </button>
 
+                <button id="adminReportsBtn" class="sponsor-dropdown-item" type="button">
+                    Admin Reports
+                </button>
+
+                <button id="auditLogsBtn" class="sponsor-dropdown-item" type="button">
+                    Audit Logs
+                </button>
+            </div>
+        </div>
+        
         <div id="sponsorMenuWrap" class="sponsor-menu" style="display:none;">
             <button id="sponsorMenuBtn" class="btn btn-primary sponsor-menu-btn" type="button">
                 Sponsor Pages <span class="caret">▼</span>
