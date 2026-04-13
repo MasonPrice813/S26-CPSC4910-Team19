@@ -1,6 +1,7 @@
 const adminChartCtx = document.getElementById("adminPointsChart")?.getContext("2d");
 let adminPointsChart = null;
 let adminDriversCache = [];
+let adminTransactionsCache = [];
 
 const pointsAnalyticsSection = document.getElementById("pointsAnalyticsSection");
 const pointsTimeView = document.getElementById("pointsTimeView");
@@ -22,6 +23,59 @@ function esc(s) {
     '"': "&quot;",
     "'": "&#039;"
   }[m]));
+}
+
+function csvEscape(value) {
+  const str = String(value ?? "");
+  return `"${str.replace(/"/g, '""')}"`;
+}
+
+function exportTransactionsToCsv() {
+  if (!adminTransactionsCache.length) {
+    alert("There are no transactions to export.");
+    return;
+  }
+
+  const headers = [
+    "Sponsor",
+    "Driver First Name",
+    "Driver Last Name",
+    "Product ID",
+    "Points",
+    "Price ($)",
+    "Date Ordered"
+  ];
+
+  const rows = adminTransactionsCache.map(t => [
+    t.sponsor ?? "",
+    t.first_name ?? "",
+    t.last_name ?? "",
+    t.product_id ?? "",
+    t.point_cost ?? "",
+    t.dollar_cost ?? "",
+    t.date_ordered ? new Date(t.date_ordered).toISOString() : ""
+  ]);
+
+  const csvContent = [
+    headers.map(csvEscape).join(","),
+    ...rows.map(row => row.map(csvEscape).join(","))
+  ].join("\n");
+
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = window.URL.createObjectURL(blob);
+
+  const sponsor = document.getElementById("sponsorFilter")?.value || "all-sponsors";
+  const driver = document.getElementById("driverFilter")?.value || "all-drivers";
+  const range = document.getElementById("rangeFilter")?.value || "all-time";
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `admin-transactions-${sponsor}-${driver}-${range}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+
+  window.URL.revokeObjectURL(url);
 }
 
 async function loadMe() {
@@ -91,10 +145,11 @@ async function loadTransactions() {
 
     const url = `/api/admin/transactions${params.toString() ? `?${params.toString()}` : ""}`;
     const data = await getJSON(url);
+    adminTransactionsCache = Array.isArray(data) ? data : [];
 
-    status.textContent = `${data.length} transaction(s) found.`;
+    status.textContent = `${adminTransactionsCache.length} transaction(s) found.`;
 
-    if (!data.length) {
+    if (!adminTransactionsCache.length) {
       tbody.innerHTML = `
         <tr>
           <td colspan="5" style="padding:12px 10px;" class="muted">No transactions found.</td>
@@ -103,7 +158,7 @@ async function loadTransactions() {
       return;
     }
 
-    data.forEach(t => {
+    adminTransactionsCache.forEach(t => {
       const row = document.createElement("tr");
       row.innerHTML = `
         <td style="padding:12px 10px; border-bottom:1px solid rgba(255,255,255,0.10);">${esc(t.sponsor)}</td>
@@ -117,6 +172,7 @@ async function loadTransactions() {
     });
   } catch (err) {
     console.error(err);
+    adminTransactionsCache = [];
     status.textContent = err.message || "Failed to load transactions.";
     tbody.innerHTML = `
       <tr>
@@ -268,6 +324,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" });
     window.location.href = "/Website/login.html";
   });
+
+  document.getElementById("exportCsvBtn")?.addEventListener("click", exportTransactionsToCsv);
 
   document.getElementById("sponsorFilter").addEventListener("change", async () => {
     document.getElementById("driverFilter").value = "";
