@@ -4154,7 +4154,7 @@ app.post("/api/sponsor/reports/pdf", requireSponsor, async (req, res) => {
 app.get("/api/admin/audit-logs", requireAdmin, async (req, res) => {
   try {
     const {
-      event_type,
+      event_types,
       sponsor,
       status,
       date_from,
@@ -4169,7 +4169,6 @@ app.get("/api/admin/audit-logs", requireAdmin, async (req, res) => {
     const validEventTypes = new Set([
       "login",
       "login_failed",
-      "logout",
       "purchase",
       "driver_application",
       "account_created"
@@ -4177,9 +4176,11 @@ app.get("/api/admin/audit-logs", requireAdmin, async (req, res) => {
 
     const validStatuses = new Set(["success", "failure", "pending"]);
 
-    const eventFilter = validEventTypes.has(String(event_type || ""))
-      ? String(event_type)
-      : null;
+    const selectedEventTypes = String(event_types || "")
+      .split(",")
+      .map(s => s.trim())
+      .filter(Boolean)
+      .filter(t => validEventTypes.has(t));
 
     const statusFilter = validStatuses.has(String(status || ""))
       ? String(status)
@@ -4193,6 +4194,10 @@ app.get("/api/admin/audit-logs", requireAdmin, async (req, res) => {
 
     const sources = [];
     const sourceParams = [];
+    
+    function sqlList(list) {
+      return list.map(() => "?").join(", ");
+    }
 
     // ---------------- LOGIN ATTEMPTS ----------------
     sources.push(`
@@ -4219,7 +4224,12 @@ app.get("/api/admin/audit-logs", requireAdmin, async (req, res) => {
       LEFT JOIN users u
         ON u.username = la.username
       WHERE 1=1
-        ${eventFilter ? `AND CASE WHEN la.status = 'SUCCESS' THEN 'login' ELSE 'login_failed' END = ?` : ""}
+        ${selectedEventTypes.length ? `
+          AND CASE
+                WHEN la.status = 'SUCCESS' THEN 'login'
+                ELSE 'login_failed'
+              END IN (${sqlList(selectedEventTypes)})
+        ` : ""}
         ${statusFilter ? `AND LOWER(la.status) = ?` : ""}
         ${fromDate ? `AND la.attempt_time >= ?` : ""}
         ${toDate ? `AND la.attempt_time <= ?` : ""}
@@ -4231,7 +4241,7 @@ app.get("/api/admin/audit-logs", requireAdmin, async (req, res) => {
         )` : ""}
     `);
 
-    if (eventFilter) sourceParams.push(eventFilter);
+    if (selectedEventTypes.length) sourceParams.push(...selectedEventTypes);
     if (statusFilter) sourceParams.push(statusFilter);
     if (fromDate) sourceParams.push(fromDate);
     if (toDate) sourceParams.push(toDate);
@@ -4273,7 +4283,9 @@ app.get("/api/admin/audit-logs", requireAdmin, async (req, res) => {
       JOIN users u
         ON u.id = o.user_id
       WHERE 1=1
-        ${eventFilter ? `AND 'purchase' = ?` : ""}
+        ${selectedEventTypes.length ? `
+          AND 'purchase' IN (${sqlList(selectedEventTypes)})
+        ` : ""}
         ${statusFilter ? `AND 'success' = ?` : ""}
         ${sponsorFilter ? `AND o.sponsor_name = ?` : ""}
         ${fromDate ? `AND o.date_ordered >= ?` : ""}
@@ -4295,7 +4307,7 @@ app.get("/api/admin/audit-logs", requireAdmin, async (req, res) => {
         u.last_name
     `);
 
-    if (eventFilter) sourceParams.push("purchase");
+    if (selectedEventTypes.length) sourceParams.push(...selectedEventTypes);
     if (statusFilter) sourceParams.push("success");
     if (sponsorFilter) sourceParams.push(sponsorFilter);
     if (fromDate) sourceParams.push(fromDate);
@@ -4324,7 +4336,9 @@ app.get("/api/admin/audit-logs", requireAdmin, async (req, res) => {
       JOIN application_sponsors aps
         ON aps.application_id = a.id
       WHERE a.role = 'Driver'
-        ${eventFilter ? `AND 'driver_application' = ?` : ""}
+        ${selectedEventTypes.length ? `
+          AND 'driver_application' IN (${sqlList(selectedEventTypes)})
+        ` : ""}
         ${statusFilter ? `AND LOWER(a.status) = ?` : ""}
         ${sponsorFilter ? `AND aps.sponsor_name = ?` : ""}
         ${fromDate ? `AND a.created_at >= ?` : ""}
@@ -4337,7 +4351,7 @@ app.get("/api/admin/audit-logs", requireAdmin, async (req, res) => {
         )` : ""}
     `);
 
-    if (eventFilter) sourceParams.push("driver_application");
+    if (selectedEventTypes.length) sourceParams.push(...selectedEventTypes);;
     if (statusFilter) sourceParams.push(statusFilter);
     if (sponsorFilter) sourceParams.push(sponsorFilter);
     if (fromDate) sourceParams.push(fromDate);
@@ -4364,7 +4378,9 @@ app.get("/api/admin/audit-logs", requireAdmin, async (req, res) => {
         TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))) AS user_name
       FROM users u
       WHERE 1=1
-        ${eventFilter ? `AND 'account_created' = ?` : ""}
+        ${selectedEventTypes.length ? `
+          AND 'account_created' IN (${sqlList(selectedEventTypes)})
+        ` : ""}
         ${statusFilter ? `AND 'success' = ?` : ""}
         ${sponsorFilter ? `AND u.sponsor = ?` : ""}
         ${fromDate ? `AND u.time_created >= ?` : ""}
@@ -4377,7 +4393,7 @@ app.get("/api/admin/audit-logs", requireAdmin, async (req, res) => {
         )` : ""}
     `);
 
-    if (eventFilter) sourceParams.push("account_created");
+    if (selectedEventTypes.length) sourceParams.push(...selectedEventTypes);
     if (statusFilter) sourceParams.push("success");
     if (sponsorFilter) sourceParams.push(sponsorFilter);
     if (fromDate) sourceParams.push(fromDate);

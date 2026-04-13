@@ -10,7 +10,7 @@
     from:    null,
     to:      null,
     sponsor: '',
-    event:   '',
+    events:  [],
     status:  '',
     search:  '',
   };
@@ -60,7 +60,42 @@
   filterTo.addEventListener('change',   () => { filters.to   = filterTo.value   || null; });
 
   initChipGroup('chipSponsor', 'sponsor', value => { filters.sponsor = value; });
-  initChipGroup('chipEvent',   'event',   value => { filters.event   = value; });
+
+  const chipEventRow = document.getElementById('chipEvent');
+
+  chipEventRow.addEventListener('click', e => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+
+    const value = chip.dataset.event || '';
+    const allChip = chipEventRow.querySelector('.chip[data-event=""]');
+
+    //Clicking "All"
+    if (value === '') {
+      filters.events = [];
+      chipEventRow.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+      allChip.classList.add('active');
+      return;
+    }
+
+    //Turn off "All" when selecting specific types
+    allChip.classList.remove('active');
+    chip.classList.toggle('active');
+
+    const activeSpecific = Array.from(
+      chipEventRow.querySelectorAll('.chip.active[data-event]')
+    )
+      .map(c => c.dataset.event)
+      .filter(v => v);
+
+    filters.events = activeSpecific;
+
+    //If nothing selected, fall back to All
+    if (filters.events.length === 0) {
+      allChip.classList.add('active');
+    }
+  });
+
   initChipGroup('chipStatus',  'status',  value => { filters.status  = value; });
 
   // ── Preset range → date params ───────────────────────────────
@@ -88,7 +123,7 @@
     const p = new URLSearchParams();
     const { date_from, date_to } = rangeToDateParams();
 
-    if (filters.event)   p.set('event_type', filters.event);
+    if (filters.events.length) { p.set('event_types', filters.events.join(',')); }
     if (filters.sponsor) p.set('sponsor',    filters.sponsor);
     if (filters.status)  p.set('status',     filters.status);
     if (date_from)       p.set('date_from',  date_from);
@@ -123,14 +158,21 @@
 
   // ── Render helpers ───────────────────────────────────────────
   const EVENT_LABELS = {
-    login: 'Login', login_failed: 'Login Failed', logout: 'Logout',
-    purchase: 'Purchase', driver_application: 'Application', account_created: 'Account Created',
+    login: 'Login',
+    login_failed: 'Login Failed',
+    purchase: 'Purchase',
+    driver_application: 'Application',
+    account_created: 'Account Created',
   };
+
   const EVENT_CLASSES = {
-    login: 'badge-login', login_failed: 'badge-login-failed', logout: 'badge-logout',
-    purchase: 'badge-purchase', driver_application: 'badge-application',
+    login: 'badge-login',
+    login_failed: 'badge-login-failed',
+    purchase: 'badge-purchase',
+    driver_application: 'badge-application',
     account_created: 'badge-account',
   };
+  
   const STATUS_CLASSES = {
     success: 'status-success', failure: 'status-failure', pending: 'status-pending',
   };
@@ -248,7 +290,7 @@
     filters.from    = null;
     filters.to      = null;
     filters.sponsor = '';
-    filters.event   = '';
+    filters.events  = [];
     filters.status  = '';
     filterSearch.value = '';
     filterFrom.value   = '';
