@@ -3,6 +3,7 @@
 
   // ── State ────────────────────────────────────────────────────
   let currentPage = 1;
+  let totalPages = 1;
   const PAGE_SIZE = 50;
 
   const filters = {
@@ -172,7 +173,7 @@
     driver_application: 'badge-application',
     account_created: 'badge-account',
   };
-  
+
   const STATUS_CLASSES = {
     success: 'status-success', failure: 'status-failure', pending: 'status-pending',
   };
@@ -242,13 +243,26 @@
 
   // ── Render pagination ────────────────────────────────────────
   function renderPagination({ total, page, pages, limit }) {
-    if (pages <= 1) { paginationEl.hidden = true; return; }
+    totalPages = Math.max(1, Number(pages || 1));
+
+    if (total <= PAGE_SIZE || totalPages <= 1) {
+      paginationEl.hidden = true;
+      btnPrev.style.display = "none";
+      btnNext.style.display = "none";
+      return;
+    }
+
     paginationEl.hidden = false;
+    btnPrev.style.display = "inline-block";
+    btnNext.style.display = "inline-block";
+
     const from = Math.min((page - 1) * limit + 1, total);
     const to   = Math.min(page * limit, total);
+
     pageInfo.textContent = `${from}–${to} of ${total.toLocaleString()}`;
+
     btnPrev.disabled = page <= 1;
-    btnNext.disabled = page >= pages;
+    btnNext.disabled = page >= totalPages;
   }
 
   // ── Fetch ────────────────────────────────────────────────────
@@ -259,6 +273,8 @@
     emptyState.hidden   = true;
     errorState.hidden   = true;
     paginationEl.hidden = true;
+    btnPrev.disabled    = true;
+    btnNext.disabled    = true;
 
     try {
       const res = await fetch(`/api/admin/audit-logs?${buildQuery(page)}`);
@@ -270,6 +286,15 @@
       }
 
       const json = await res.json();
+      const pages = Math.max(1, Number(json?.pagination?.pages || 1));
+      const safePage = Math.min(page, pages);
+
+      if (page > pages) {
+        currentPage = pages;
+        await fetchLogs(pages);
+        return;
+      }
+
       totalCount.textContent =
         `${json.pagination.total.toLocaleString()} event${json.pagination.total === 1 ? '' : 's'}`;
       renderRows(json.data);
@@ -311,8 +336,16 @@
     fetchLogs(1);
   });
 
-  btnPrev.addEventListener('click', () => fetchLogs(currentPage - 1));
-  btnNext.addEventListener('click', () => fetchLogs(currentPage + 1));
+  btnPrev.addEventListener('click', () => {
+    if (currentPage <= 1) return;
+    fetchLogs(currentPage - 1);
+  });
+
+  btnNext.addEventListener('click', () => {
+    if (currentPage >= totalPages) return;
+    fetchLogs(currentPage + 1);
+  });
+
   filterSearch.addEventListener('keydown', e => { if (e.key === 'Enter') fetchLogs(1); });
 
   // ── Init ─────────────────────────────────────────────────────
