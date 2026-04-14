@@ -151,6 +151,13 @@ button.btn-equal {
  -webkit-appearance: none;
 }
 
+.adminShowText_table {
+    display: none;
+}
+.adminShowText_table.show {
+    display: table-row;
+}
+
 
 /* ===== Layout ===== */
 .container {

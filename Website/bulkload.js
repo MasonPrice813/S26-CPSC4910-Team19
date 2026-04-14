@@ -1,27 +1,29 @@
 async function setupAdmin() {
-    const res = await fetch('/api/me');
-    const user = await res.json();
-    
-    if (user.role === 'Admin') {
-        const elements = document.querySelectorAll('.adminShowText');
-        elements.forEach(el => {
-            el.style.display = 'block';
-        });
-    }
+  const res = await fetch('/api/me');
+  const user = await res.json();
+  if (user.role === 'Admin') {
+    document.querySelectorAll('.adminShowText_table').forEach(row => {
+      row.classList.add('show');
+  });
+  const elements = document.querySelectorAll('.adminShowText');
+  elements.forEach(el => {
+    el.style.display = 'block';
+    });
+  }
 }
 
 setupAdmin();
 
 async function setupSponsor() {
-    const res = await fetch('/api/me');
-    const user = await res.json();
+  const res = await fetch('/api/me');
+  const user = await res.json();
     
-    if (user.role === 'Sponsor') {
-        const elements = document.querySelectorAll('.sponsorShowText');
-        elements.forEach(el => {
-            el.style.display = 'block';
-        });
-    }
+  if (user.role === 'Sponsor') {
+    const elements = document.querySelectorAll('.sponsorShowText');
+    elements.forEach(el => {
+        el.style.display = 'block';
+    });
+  }
 }
 
 setupSponsor();
@@ -60,6 +62,19 @@ document.getElementById("uploadForm").addEventListener("submit", async (e) => {
     insertedRows.forEach(u => {
       output.innerHTML += `<p>${u.name} (${u.email})</p>`;
     });
+    const pointUpdates = data.pointUpdates || [];
+
+    if (pointUpdates.length > 0) {
+      output.innerHTML += `<h3>Points Added</h3>`;
+
+      pointUpdates.forEach(p => {
+        output.innerHTML += `
+          <p style="color:green;">
+            ${p.email} +${p.points} (${p.reason})
+          </p>
+        `;
+      });
+    }
 
     if (errors.length > 0) {
       output.innerHTML += `<h3 style="color:red;">Errors (${errors.length})</h3>`;

@@ -1,6 +1,6 @@
 O|New Organization
 D|New Organization|Joe|Driver|me@email.com
-S|New Organization|Jill|Sponsor|jill@mail.com|100|New Driver
+S|New Organization|Jill|Sponsor|jill@mail.com
 D|Existing Organization|Tom|Smith|tom887@gmail.com
 O|NewOrganization2
-D|ExistingOrganization|New|Driver|some@email.com
+D|ExistingOrganization|New|Driver|some@email.com|100|New Driver

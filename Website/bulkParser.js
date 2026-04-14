@@ -2,8 +2,9 @@ async function parseBulkFile(fileContent, userRole, userOrg, pool) {
   const lines = fileContent.split(/\r?\n/);
   const results = [];
   const errors = [];
-  const organizations = new Set();
-  
+  const organizations = new Set(
+    (await getSponsors(pool)).map(o => o.trim())
+  );
   if (!isPipeDelimited(lines)) {
     return {
       results: [],
@@ -50,17 +51,24 @@ function isPipeDelimited(lines) {
 // Load users
 async function loadUsers(pool) {
   const [users] = await pool.query(
-    "SELECT email, role, first_name, last_name, sponsor FROM users"
+    "SELECT id, email, role, first_name, last_name, sponsor FROM users"
   );
 
   const map = new Map();
   users.forEach(u => map.set(u.email.toLowerCase(), u));
   return map;
 }
+async function getSponsors(pool) {
+  const [rows] = await pool.query(
+    "SELECT DISTINCT sponsor FROM users WHERE sponsor IS NOT NULL AND sponsor != ''"
+  );
+
+  return rows.map(r => r.sponsor);
+}
 
 // Parse the file line
 function parseLine(line) {
-  const parts = line.split("|");
+  const parts = line.split("|").map(p => p?.trim());
 
   return {
     type: parts[0],
@@ -123,6 +131,10 @@ function handleExistingUser(ctx, user) {
     return fail(ctx, lineNumber, "Cannot modify admin users");
   }
 
+  if (type === "S" && points) {
+    return fail(ctx, lineNumber, "Points cannot be assigned to sponsor users");
+  }
+
   if (isNameChanged(user, firstName, lastName)) {
     return fail(ctx, lineNumber, "Cannot modify existing user's name");
   }
@@ -136,6 +148,7 @@ function handleExistingUser(ctx, user) {
     email: parsed.email,
     org: user.sponsor,
     action: "update_points",
+    driverId: user.id, 
     points: points ? Number(points) : 0,
     reason: points ? reason : null
   };
@@ -182,7 +195,7 @@ function handleAdmin(ctx) {
       return fail(ctx, lineNumber, "Organization name required");
     }
 
-    organizations.add(orgName);
+    organizations.add(orgName.trim());
     return { type, org: orgName, action: "create_org" };
   }
 
@@ -190,8 +203,14 @@ function handleAdmin(ctx) {
     return fail(ctx, lineNumber, "Organization required");
   }
 
-  if (!organizations.has(orgName)) {
+  const normalizedOrg = orgName?.trim();
+
+  if (!organizations.has(normalizedOrg)) {
     return fail(ctx, lineNumber, "Organization not created yet");
+  }
+
+  if (type === "S" && points) {
+    return fail(ctx, lineNumber, "Points cannot be assigned to sponsor users");
   }
 
   return buildCreate(parsed, orgName);

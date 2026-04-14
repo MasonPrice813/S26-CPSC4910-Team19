@@ -3367,75 +3367,103 @@ app.post("/api/admin/users/:id/sponsors", requireAdmin, async (req, res) => {
 });
 
 app.post("/api/upload-bulk", uploadText.single("file"), async (req, res) => {
- try {
-   if (!req.file) {
-     return res.status(400).json({ error: "No file uploaded" });
-   }
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+    const fileContent = req.file.buffer.toString("utf-8");
+    const { results, errors } = await parseBulkFile(
+      fileContent,
+      req.session.user.role,
+      req.session.user.sponsor,
+      pool
+    );
+    
+    let inserted = 0;
+    let insertedRows = [];
+    let pointUpdates = [];
+    const conn = await pool.getConnection();
+    await conn.beginTransaction();
+    const sponsorOrg = req.session.user.sponsor;
+    
+    try {
+      for (const r of results) {
+        if (r.action === "create") {
+          const finalOrg = r.org || req.session.user.sponsor;
 
-   const fileContent = req.file.buffer.toString("utf-8");
-   const { results, errors } = await parseBulkFile(
-     fileContent,
-     req.session.user.role,
-     req.session.user.sponsor,
-     pool
-   );
+          const [insertResult] = await conn.query(
+            `INSERT INTO users
+            (role, first_name, last_name, username, email, password, sponsor)
+            VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [
+              r.type === "D" ? "Driver" : "Sponsor",
+              r.firstName,
+              r.lastName,
+              r.email,
+              r.email,
+              "TEMP_PASSWORD",
+              finalOrg
+            ]
+          );
 
-   let inserted = 0;
-   let insertedRows = [];
-   const conn = await pool.getConnection();
-   await conn.beginTransaction();
-   const sponsorOrg = req.session.user.sponsor;
+          inserted++;
+          insertedRows.push({
+            email: r.email,
+            name: `${r.firstName} ${r.lastName}`,
+            role: r.type === "D" ? "Driver" : "Sponsor"
+          });
 
-   try {
-     for (const r of results) {
-       if (r.action === "create") {
-         const finalOrg = r.org || req.session.user.sponsor;
-         await conn.query(
-           `INSERT INTO users
-           (role, first_name, last_name, username, email, password, sponsor)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-           [
-             r.type === "D" ? "Driver" : "Sponsor",
-             r.firstName,
-             r.lastName,
-             r.email,
-             r.email,
-             "TEMP_PASSWORD",
-             finalOrg
-           ]
-         );
+          if (r.type === "D" && r.points !== undefined && r.points !== null && r.points !== "") {
+            const points = Number(r.points);
+            const driverId = insertResult.insertId;
 
+            await conn.query(
+              "CALL update_driver_points(?, ?, ?)",
+              [driverId, points, r.reason || "Initial upload"]
+            );
 
-         inserted++;
-         insertedRows.push({
-           email: r.email,
-           name: `${r.firstName} ${r.lastName}`,
-           role: r.type === "D" ? "Driver" : "Sponsor"
-         });
-       }
-     }
+            pointUpdates.push({
+              email: r.email,
+              points,
+              reason: r.reason || "Initial upload"
+            });
+          }
+        }
 
-   await conn.commit();
-   }
-   catch (err) {
-     await conn.rollback();
-     throw err;
-   }
-   finally {
-     conn.release();
-   }
+        if (r.action === "update_points" && r.type === "D") {
+          await conn.query(
+            "CALL update_driver_points(?, ?, ?)",
+            [r.driverId, r.points, r.reason]
+          );
+          pointUpdates.push({
+            email: r.email,
+            points: Number(r.points),
+            reason: r.reason
+          });
+        }
+      }
+      await conn.commit();
 
-   res.json({
-     success: true,
-     inserted,
-     insertedRows,
-     errors
-   });
- }
- catch (err) {
-   console.error(err);
-   res.status(500).json({ error: err.message });
- }
+    }
+    catch (err) {
+      await conn.rollback();
+      throw err;
+    }
+    finally {
+      conn.release();
+    }
+    res.json({
+      success: true,
+      inserted,
+      insertedRows,
+      pointUpdates,
+      errors
+    });
+  }
+  catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.post("/api/sponsor/orders/checkout", requireSponsor, async (req, res) => {

@@ -1392,6 +1392,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const sponsorDashboardBtn = document.getElementById("sponsorDashboardBtn");
   const hiddenItemsBtn = document.getElementById("hiddenItemsBtn");
   const sponsorBulkLoadBtn = document.getElementById("sponsorBulkLoadBtn");
+  const adminBulkLoadBtn = document.getElementById("adminBulkLoadBtn");
 
 
   const cartBtn = document.getElementById("cartBtn");
@@ -1686,6 +1687,10 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       auditLogsBtn.addEventListener("click", () => {
         window.location.href = "/Website/audit-logs.html";
+      });
+      
+      adminBulkLoadBtn.addEventListener("click", () => {
+        window.location.href = "/Website/bulkload.html";
       });
 
       document.addEventListener("click", () => {
