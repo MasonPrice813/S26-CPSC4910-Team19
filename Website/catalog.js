@@ -1735,6 +1735,14 @@ document.addEventListener("DOMContentLoaded", async () => {
         window.location.href = "/Website/bulkload.html";
       });
 
+      document.getElementById("sponsorAuditLogsBtn")?.addEventListener("click", () => {
+        window.location.href = "/Website/audit-logs.html";
+      });
+      
+      document.getElementById("sponsorAuditLogsBtn")?.addEventListener("click", () => {
+        window.location.href = "/Website/audit-logs.html";
+      });
+
       if (hiddenItemsBtn) {
         hiddenItemsBtn.style.display = "inline-block";
         hiddenItemsBtn.addEventListener("click", () => {
