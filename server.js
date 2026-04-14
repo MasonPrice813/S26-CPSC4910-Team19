@@ -3167,12 +3167,17 @@ app.post("/api/sponsor/settings", requireSponsor, async (req, res) => {
 
 app.get("/api/catalog/points-ratio", requireLogin, async (req, res) => {
   try {
+    const role = req.session.user.role;
+    const requestedSponsor = String(req.query.sponsor || "").trim();
+
     let sponsorName = null;
 
-    if (req.session.user.role === "Sponsor") {
+    if (role === "Sponsor") {
       sponsorName = req.session.user.sponsor || null;
-    } else if (req.session.user.role === "Driver") {
-      sponsorName = String(req.query.sponsor || "").trim() || null;
+    } else if (role === "Driver") {
+      sponsorName = requestedSponsor || null;
+    } else if (role === "Admin") {
+      sponsorName = requestedSponsor || null;
     }
 
     if (!sponsorName) {
@@ -3187,12 +3192,14 @@ app.get("/api/catalog/points-ratio", requireLogin, async (req, res) => {
       [sponsorName]
     );
 
-    res.json({
-      pointsPerDollar: rows.length ? Number(rows[0].points_per_dollar || 10) : 10
+    return res.json({
+      pointsPerDollar: rows.length
+        ? Number(rows[0].points_per_dollar || 10)
+        : 10
     });
   } catch (err) {
     console.error("catalog points ratio error:", err);
-    res.status(500).json({ error: "Database error" });
+    return res.status(500).json({ error: "Database error" });
   }
 });
 

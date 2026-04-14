@@ -499,6 +499,8 @@ async function loadPointsPerDollarRatio() {
 
     if (CURRENT_USER_ROLE === "Driver" && ACTIVE_DRIVER_SPONSOR) {
       url += `?sponsor=${encodeURIComponent(ACTIVE_DRIVER_SPONSOR)}`;
+    } else if (CURRENT_USER_ROLE === "Admin" && ACTIVE_ADMIN_SPONSOR) {
+      url += `?sponsor=${encodeURIComponent(ACTIVE_ADMIN_SPONSOR)}`;
     }
 
     const data = await getJSON(url);
@@ -1238,6 +1240,7 @@ function renderCatalogSponsorDropdown() {
       : DRIVER_SPONSORS[0]?.sponsor_name || null;
 
     select.value = ACTIVE_DRIVER_SPONSOR || "";
+    saveActiveDriverSponsor(ACTIVE_DRIVER_SPONSOR);
     refreshActiveDriverSponsorPoints();
 
     select.onchange = async () => {
@@ -1245,11 +1248,13 @@ function renderCatalogSponsorDropdown() {
       saveActiveDriverSponsor(ACTIVE_DRIVER_SPONSOR);
 
       await loadPointsPerDollarRatio();
+      await loadHiddenProductIds();
 
       refreshActiveDriverSponsorPoints();
       loadCart();
       updateCartBadge();
       renderCartPanel();
+      renderRecommendedProducts();
       currentPage = 1;
       applyFilters();
     };
@@ -1276,11 +1281,15 @@ function renderCatalogSponsorDropdown() {
       : ADMIN_SPONSORS[0] || null;
 
     select.value = ACTIVE_ADMIN_SPONSOR || "";
+    saveActiveAdminSponsor(ACTIVE_ADMIN_SPONSOR);
 
     select.onchange = async () => {
       ACTIVE_ADMIN_SPONSOR = select.value || null;
       saveActiveAdminSponsor(ACTIVE_ADMIN_SPONSOR);
+
+      await loadPointsPerDollarRatio();
       await loadHiddenProductIds();
+
       currentPage = 1;
       applyFilters();
     };
