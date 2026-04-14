@@ -3395,6 +3395,21 @@ app.post("/api/upload-bulk", uploadText.single("file"), async (req, res) => {
     
     try {
       for (const r of results) {
+        const [existing] = await pool.query(
+          "SELECT id, first_name, last_name FROM users WHERE email = ?",
+          [r.email]
+        );
+        
+        if (existing.length > 0) {
+          r.action = "update_points";
+          r.driverId = existing[0].id;
+          r.firstName = existing[0].first_name;  
+          r.lastName = existing[0].last_name;    
+        }
+        else {
+          r.action = "create";
+        }
+
         if (r.action === "create") {
           const finalOrg = r.org || req.session.user.sponsor;
 
@@ -3430,6 +3445,7 @@ app.post("/api/upload-bulk", uploadText.single("file"), async (req, res) => {
             );
 
             pointUpdates.push({
+              name: `${r.firstName} ${r.lastName}`,
               email: r.email,
               points,
               reason: r.reason || "Initial upload"
@@ -3443,6 +3459,7 @@ app.post("/api/upload-bulk", uploadText.single("file"), async (req, res) => {
             [r.driverId, r.points, r.reason]
           );
           pointUpdates.push({
+            name: `${r.firstName} ${r.lastName}`,
             email: r.email,
             points: Number(r.points),
             reason: r.reason

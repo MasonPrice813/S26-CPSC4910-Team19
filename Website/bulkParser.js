@@ -124,8 +124,16 @@ function processLine(ctx) {
   return handleNewUser(ctx);
 }
 function handleExistingUser(ctx, user) {
-  const { parsed, lineNumber } = ctx;
-  const { type, firstName, lastName, points, reason } = parsed;
+  const { parsed, lineNumber, userRole, userOrg } = ctx;
+  const { type, firstName, lastName, points, reason, orgName } = parsed;
+
+  if (ctx.userRole === "Sponsor" && orgName?.trim()) {
+    return fail(ctx, lineNumber, "Organization must be empty for sponsors");
+  }
+
+  if (ctx.userRole === "Sponsor" && user.sponsor !== userOrg) {
+    return fail(ctx, lineNumber, "Cannot modify users outside your organization");
+  }
 
   if (user.role === "Admin") {
     return fail(ctx, lineNumber, "Cannot modify admin users");

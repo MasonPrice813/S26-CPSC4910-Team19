@@ -70,7 +70,7 @@ document.getElementById("uploadForm").addEventListener("submit", async (e) => {
       pointUpdates.forEach(p => {
         output.innerHTML += `
           <p style="color:green;">
-            ${p.email} +${p.points} (${p.reason})
+            ${p.name} (${p.email}) +${p.points} (${p.reason})
           </p>
         `;
       });
