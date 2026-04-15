@@ -4570,6 +4570,567 @@ app.post('/api/admin/audit-access-settings', requireAdmin, async (req, res) => {
   }
 });
 
+app.post("/api/admin/audit-logs/pdf", requireLogin, async (req, res) => {
+  try {
+    const me = req.session.user;
+
+    // ── Access control ────────────────────────────────────────
+    let scopeSponsor = null;
+    let scopeUserId = null;
+
+    if (me.role !== "Admin") {
+      const roleKey = me.role === "Sponsor" ? "sponsor" : "driver";
+
+      const [settingRows] = await pool.query(
+        `SELECT access_level
+         FROM audit_access_settings
+         WHERE role_type = ?`,
+        [roleKey]
+      );
+
+      const level = settingRows[0]?.access_level ?? "none";
+
+      if (level === "none") {
+        return res.status(403).json({ error: "Access to audit logs is disabled." });
+      }
+
+      if (level === "own") {
+        if (me.role === "Sponsor") scopeSponsor = me.sponsor;
+        if (me.role === "Driver") scopeUserId = me.id;
+      }
+    }
+
+    const {
+      event_types = [],
+      sponsor = "",
+      status = "",
+      date_from = "",
+      date_to = "",
+      search = ""
+    } = req.body || {};
+
+    const validEventTypes = new Set([
+      "login",
+      "login_failed",
+      "purchase",
+      "driver_application",
+      "account_created"
+    ]);
+
+    const validStatuses = new Set(["success", "failure", "pending"]);
+
+    const selectedEventTypes = Array.isArray(event_types)
+      ? event_types.map(v => String(v).trim()).filter(v => validEventTypes.has(v))
+      : String(event_types || "")
+          .split(",")
+          .map(v => v.trim())
+          .filter(v => validEventTypes.has(v));
+
+    const statusFilter = validStatuses.has(String(status || "").trim())
+      ? String(status).trim()
+      : null;
+
+    const sponsorFilter = scopeSponsor
+      ? scopeSponsor
+      : (String(sponsor || "").trim() || null);
+
+    const searchFilter = String(search || "").trim() || null;
+    const fromDate = date_from ? new Date(`${date_from}T00:00:00`) : null;
+    const toDate = date_to ? new Date(`${date_to}T23:59:59`) : null;
+
+    if (date_from && Number.isNaN(fromDate?.getTime())) {
+      return res.status(400).json({ error: "Invalid start date." });
+    }
+
+    if (date_to && Number.isNaN(toDate?.getTime())) {
+      return res.status(400).json({ error: "Invalid end date." });
+    }
+
+    if (fromDate && toDate && fromDate > toDate) {
+      return res.status(400).json({ error: "Start date cannot be after end date." });
+    }
+
+    const sources = [];
+    const sourceParams = [];
+
+    const sqlList = arr => arr.map(() => "?").join(",");
+
+    // ── LOGIN / LOGIN FAILED ──────────────────────────────────
+    const loginSponsorScope = sponsorFilter ? `AND u.sponsor = ?` : "";
+    const loginUserScope = scopeUserId ? `AND u.id = ?` : "";
+
+    sources.push(`
+      SELECT
+        CONCAT('login_', la.id) AS source_key,
+        CASE
+          WHEN LOWER(la.status) = 'success' THEN 'login'
+          ELSE 'login_failed'
+        END AS event_type,
+        CASE
+          WHEN LOWER(la.status) = 'success' THEN 'Successful login'
+          ELSE 'Failed login attempt'
+        END AS description,
+        CASE
+          WHEN LOWER(la.status) = 'success' THEN 'success'
+          ELSE 'failure'
+        END AS status,
+        u.sponsor AS sponsor_name,
+        NULL AS ip_address,
+        la.attempt_time AS created_at,
+        NULL AS metadata,
+        u.id AS user_id,
+        u.email AS user_email,
+        u.role AS user_role,
+        TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))) AS user_name
+      FROM login_attempts la
+      LEFT JOIN users u
+        ON u.username = la.username
+      WHERE 1=1
+        ${loginUserScope}
+        ${selectedEventTypes.length ? `AND CASE WHEN LOWER(la.status) = 'success' THEN 'login' ELSE 'login_failed' END IN (${sqlList(selectedEventTypes)})` : ""}
+        ${loginSponsorScope}
+        ${fromDate ? `AND la.attempt_time >= ?` : ""}
+        ${toDate ? `AND la.attempt_time <= ?` : ""}
+        ${searchFilter ? `AND (la.username LIKE ? OR u.email LIKE ? OR u.first_name LIKE ? OR u.last_name LIKE ?)` : ""}
+    `);
+
+    if (scopeUserId) sourceParams.push(scopeUserId);
+    if (selectedEventTypes.length) sourceParams.push(...selectedEventTypes);
+    if (sponsorFilter) sourceParams.push(sponsorFilter);
+    if (fromDate) sourceParams.push(fromDate);
+    if (toDate) sourceParams.push(toDate);
+    if (searchFilter) {
+      const like = `%${searchFilter}%`;
+      sourceParams.push(like, like, like, like);
+    }
+
+    // ── PURCHASES ─────────────────────────────────────────────
+    const purchaseSponsorScope = sponsorFilter ? `AND o.sponsor_name = ?` : "";
+    const purchaseUserScope = scopeUserId ? `AND o.user_id = ?` : "";
+
+    sources.push(`
+      SELECT
+        CONCAT('order_', o.id) AS source_key,
+        'purchase' AS event_type,
+        CONCAT('Catalog purchase: product ', o.product_id) AS description,
+        'success' AS status,
+        o.sponsor_name AS sponsor_name,
+        NULL AS ip_address,
+        o.date_ordered AS created_at,
+        JSON_OBJECT(
+          'product_id', o.product_id,
+          'points_spent', o.point_cost,
+          'dollar_cost', o.dollar_cost,
+          'shipping_method', o.shipping_method,
+          'group_id', o.group_id
+        ) AS metadata,
+        u.id AS user_id,
+        u.email AS user_email,
+        u.role AS user_role,
+        TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))) AS user_name
+      FROM orders o
+      JOIN users u
+        ON u.id = o.user_id
+      WHERE 1=1
+        ${purchaseUserScope}
+        ${selectedEventTypes.length ? `AND 'purchase' IN (${sqlList(selectedEventTypes)})` : ""}
+        ${purchaseSponsorScope}
+        ${fromDate ? `AND o.date_ordered >= ?` : ""}
+        ${toDate ? `AND o.date_ordered <= ?` : ""}
+        ${searchFilter ? `AND (u.email LIKE ? OR u.first_name LIKE ? OR u.last_name LIKE ? OR o.product_id LIKE ?)` : ""}
+    `);
+
+    if (scopeUserId) sourceParams.push(scopeUserId);
+    if (selectedEventTypes.length) sourceParams.push(...selectedEventTypes);
+    if (sponsorFilter) sourceParams.push(sponsorFilter);
+    if (fromDate) sourceParams.push(fromDate);
+    if (toDate) sourceParams.push(toDate);
+    if (searchFilter) {
+      const like = `%${searchFilter}%`;
+      sourceParams.push(like, like, like, like);
+    }
+
+    // ── DRIVER APPLICATIONS ───────────────────────────────────
+    const appSponsorScope = sponsorFilter ? `AND aps.sponsor_name = ?` : "";
+    const appUserScope = scopeUserId ? `AND u.id = ?` : "";
+
+    sources.push(`
+      SELECT
+        CONCAT('application_', a.id, '_', aps.sponsor_name) AS source_key,
+        'driver_application' AS event_type,
+        CONCAT(
+          'Driver application submitted',
+          CASE
+            WHEN a.status = 'Accepted' THEN ' (accepted)'
+            WHEN a.status = 'Rejected' THEN ' (rejected)'
+            ELSE ''
+          END
+        ) AS description,
+        CASE
+          WHEN a.status = 'Pending' THEN 'pending'
+          WHEN a.status = 'Accepted' THEN 'success'
+          WHEN a.status = 'Rejected' THEN 'failure'
+          ELSE LOWER(a.status)
+        END AS status,
+        aps.sponsor_name AS sponsor_name,
+        NULL AS ip_address,
+        COALESCE(a.reviewed_at, a.created_at) AS created_at,
+        JSON_OBJECT(
+          'application_id', a.id,
+          'application_status', a.status,
+          'rejection_reason', a.rejection_reason
+        ) AS metadata,
+        u.id AS user_id,
+        a.email AS user_email,
+        'Driver' AS user_role,
+        TRIM(CONCAT(COALESCE(a.first_name, ''), ' ', COALESCE(a.last_name, ''))) AS user_name
+      FROM applications a
+      JOIN application_sponsors aps
+        ON aps.application_id = a.id
+      LEFT JOIN users u
+        ON u.email = a.email
+      WHERE a.role = 'Driver'
+        ${appUserScope}
+        ${selectedEventTypes.length ? `AND 'driver_application' IN (${sqlList(selectedEventTypes)})` : ""}
+        ${appSponsorScope}
+        ${fromDate ? `AND COALESCE(a.reviewed_at, a.created_at) >= ?` : ""}
+        ${toDate ? `AND COALESCE(a.reviewed_at, a.created_at) <= ?` : ""}
+        ${searchFilter ? `AND (a.email LIKE ? OR a.first_name LIKE ? OR a.last_name LIKE ? OR aps.sponsor_name LIKE ?)` : ""}
+    `);
+
+    if (scopeUserId) sourceParams.push(scopeUserId);
+    if (selectedEventTypes.length) sourceParams.push(...selectedEventTypes);
+    if (sponsorFilter) sourceParams.push(sponsorFilter);
+    if (fromDate) sourceParams.push(fromDate);
+    if (toDate) sourceParams.push(toDate);
+    if (searchFilter) {
+      const like = `%${searchFilter}%`;
+      sourceParams.push(like, like, like, like);
+    }
+
+    // ── ACCOUNT CREATED ───────────────────────────────────────
+    const acctSponsorScope = sponsorFilter ? `AND u.sponsor = ?` : "";
+    const acctUserScope = scopeUserId ? `AND u.id = ?` : "";
+
+    sources.push(`
+      SELECT
+        CONCAT('user_', u.id) AS source_key,
+        'account_created' AS event_type,
+        CONCAT('Account created (', u.role, ')') AS description,
+        'success' AS status,
+        u.sponsor AS sponsor_name,
+        NULL AS ip_address,
+        u.time_created AS created_at,
+        NULL AS metadata,
+        u.id AS user_id,
+        u.email AS user_email,
+        u.role AS user_role,
+        TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))) AS user_name
+      FROM users u
+      WHERE 1=1
+        ${acctUserScope}
+        ${selectedEventTypes.length ? `AND 'account_created' IN (${sqlList(selectedEventTypes)})` : ""}
+        ${acctSponsorScope}
+        ${fromDate ? `AND u.time_created >= ?` : ""}
+        ${toDate ? `AND u.time_created <= ?` : ""}
+        ${searchFilter ? `AND (u.email LIKE ? OR u.username LIKE ? OR u.first_name LIKE ? OR u.last_name LIKE ?)` : ""}
+    `);
+
+    if (scopeUserId) sourceParams.push(scopeUserId);
+    if (selectedEventTypes.length) sourceParams.push(...selectedEventTypes);
+    if (sponsorFilter) sourceParams.push(sponsorFilter);
+    if (fromDate) sourceParams.push(fromDate);
+    if (toDate) sourceParams.push(toDate);
+    if (searchFilter) {
+      const like = `%${searchFilter}%`;
+      sourceParams.push(like, like, like, like);
+    }
+
+    // ── Final unified query ───────────────────────────────────
+    const unionSql = sources.join("\nUNION ALL\n");
+
+    const outerWhere = [];
+    const outerParams = [];
+
+    if (statusFilter) {
+      outerWhere.push(`combined.status = ?`);
+      outerParams.push(statusFilter);
+    }
+
+    const outerWhereSql = outerWhere.length
+      ? `WHERE ${outerWhere.join(" AND ")}`
+      : "";
+
+    const [rows] = await pool.query(
+      `
+      SELECT *
+      FROM (${unionSql}) combined
+      ${outerWhereSql}
+      ORDER BY created_at DESC
+      `,
+      [...sourceParams, ...outerParams]
+    );
+
+    const data = rows.map(row => ({
+      ...row,
+      metadata:
+        row.metadata && typeof row.metadata === "string"
+          ? JSON.parse(row.metadata)
+          : row.metadata || null
+    }));
+
+    // ── PDF generation (same style as sponsor report) ─────────
+    const doc = new PDFDocument({
+      margin: 40,
+      size: "A4"
+    });
+
+    const filename = `audit-log-report-${Date.now()}.pdf`;
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+
+    doc.pipe(res);
+
+    const pageWidth = doc.page.width;
+    const pageHeight = doc.page.height;
+    const leftX = 40;
+    const usableWidth = pageWidth - 80;
+    const bottomLimit = pageHeight - 45;
+
+    function addPageIfNeeded(requiredHeight = 30) {
+      if (doc.y + requiredHeight > bottomLimit) {
+        doc.addPage();
+      }
+    }
+
+    function truncatePdfText(value, maxLength = 30) {
+      const str = String(value ?? "—");
+      if (str.length <= maxLength) return str;
+      return `${str.slice(0, Math.max(0, maxLength - 3))}...`;
+    }
+
+    function formatPdfDate(value) {
+      if (!value) return "—";
+      return new Date(value).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric"
+      });
+    }
+
+    function drawReportTitle() {
+      const who =
+        me.role === "Admin"
+          ? "Admin"
+          : me.role === "Sponsor"
+            ? `Sponsor (${me.sponsor || "Own Scope"})`
+            : "Driver";
+
+      doc
+        .fillColor("#111827")
+        .font("Helvetica-Bold")
+        .fontSize(20)
+        .text("Audit Log Report", leftX, doc.y, {
+          width: usableWidth,
+          align: "center"
+        });
+
+      doc.moveDown(0.5);
+
+      doc
+        .font("Helvetica")
+        .fontSize(10)
+        .fillColor("#374151")
+        .text(`Viewer: ${who}`)
+        .text(`Generated: ${new Date().toLocaleString("en-US")}`)
+        .text(`Date Range: ${date_from || "Beginning"} to ${date_to || "Today"}`)
+        .text(`Status Filter: ${statusFilter || "All"}`)
+        .text(`Sponsor Filter: ${sponsorFilter || "All"}`)
+        .text(
+          `Event Types: ${
+            selectedEventTypes.length
+              ? selectedEventTypes.join(", ")
+              : "All"
+          }`
+        )
+        .text(`Search: ${searchFilter || "None"}`)
+        .text(`Total Rows: ${data.length}`);
+
+      doc.moveDown(1);
+    }
+
+    function drawSectionTitle(title) {
+      addPageIfNeeded(40);
+
+      const y = doc.y;
+
+      doc.roundedRect(leftX, y, usableWidth, 26, 6).fill("#1f2937");
+
+      doc
+        .fillColor("#ffffff")
+        .font("Helvetica-Bold")
+        .fontSize(13)
+        .text(title, leftX + 10, y + 7, {
+          width: usableWidth - 20
+        });
+
+      doc.y = y + 34;
+      doc.fillColor("#111827");
+    }
+
+    function drawTableHeader(headers, widths) {
+      addPageIfNeeded(28);
+
+      const y = doc.y;
+      let x = leftX;
+
+      doc.rect(leftX, y, usableWidth, 26).fill("#e5e7eb");
+
+      doc.font("Helvetica-Bold").fontSize(10).fillColor("#111827");
+
+      headers.forEach((header, i) => {
+        doc.text(header, x + 6, y + 7, {
+          width: widths[i] - 12,
+          lineBreak: false,
+          ellipsis: true
+        });
+        x += widths[i];
+      });
+
+      doc
+        .strokeColor("#c7ccd4")
+        .lineWidth(1)
+        .rect(leftX, y, usableWidth, 26)
+        .stroke();
+
+      doc.y = y + 26;
+    }
+
+    function drawTableRow(values, widths, rowIndex) {
+      addPageIfNeeded(28);
+
+      const y = doc.y;
+      let x = leftX;
+      const rowHeight = 26;
+
+      if (rowIndex % 2 === 0) {
+        doc.rect(leftX, y, usableWidth, rowHeight).fill("#f9fafb");
+      } else {
+        doc.rect(leftX, y, usableWidth, rowHeight).fill("#ffffff");
+      }
+
+      doc.font("Helvetica").fontSize(10).fillColor("#111827");
+
+      values.forEach((value, i) => {
+        doc.text(String(value ?? "—"), x + 6, y + 7, {
+          width: widths[i] - 12,
+          lineBreak: false,
+          ellipsis: true
+        });
+        x += widths[i];
+      });
+
+      doc
+        .strokeColor("#d1d5db")
+        .lineWidth(1)
+        .rect(leftX, y, usableWidth, rowHeight)
+        .stroke();
+
+      doc.y = y + rowHeight;
+    }
+
+    function renderEventSection(title, rows, columns) {
+      drawSectionTitle(title);
+
+      if (!rows.length) {
+        doc
+          .font("Helvetica")
+          .fontSize(10)
+          .fillColor("#4b5563")
+          .text("No records found for this section.");
+        doc.moveDown(1);
+        return;
+      }
+
+      const headers = columns.map(col => col.header);
+      const widths = columns.map(col => col.width);
+
+      drawTableHeader(headers, widths);
+
+      rows.forEach((row, index) => {
+        if (doc.y + 28 > bottomLimit) {
+          doc.addPage();
+          drawTableHeader(headers, widths);
+        }
+
+        drawTableRow(
+          columns.map(col => col.value(row)),
+          widths,
+          index
+        );
+      });
+
+      doc.moveDown(1);
+    }
+
+    const loginRows = data.filter(row => row.event_type === "login");
+    const failedLoginRows = data.filter(row => row.event_type === "login_failed");
+    const purchaseRows = data.filter(row => row.event_type === "purchase");
+    const applicationRows = data.filter(row => row.event_type === "driver_application");
+    const accountCreatedRows = data.filter(row => row.event_type === "account_created");
+
+    drawReportTitle();
+
+    renderEventSection("Login Events", loginRows, [
+      { header: "Date", width: 110, value: row => formatPdfDate(row.created_at) },
+      { header: "User", width: 170, value: row => truncatePdfText(row.user_name || row.user_email || "—", 28) },
+      { header: "Sponsor", width: 120, value: row => truncatePdfText(row.sponsor_name || "—", 18) },
+      { header: "Status", width: 70, value: row => truncatePdfText(row.status || "—", 10) },
+      { header: "IP", width: 85, value: row => truncatePdfText(row.ip_address || "—", 16) }
+    ]);
+
+    renderEventSection("Failed Login Events", failedLoginRows, [
+      { header: "Date", width: 110, value: row => formatPdfDate(row.created_at) },
+      { header: "User", width: 170, value: row => truncatePdfText(row.user_name || row.user_email || "—", 28) },
+      { header: "Sponsor", width: 120, value: row => truncatePdfText(row.sponsor_name || "—", 18) },
+      { header: "Status", width: 70, value: row => truncatePdfText(row.status || "—", 10) },
+      { header: "IP", width: 85, value: row => truncatePdfText(row.ip_address || "—", 16) }
+    ]);
+
+    renderEventSection("Purchases", purchaseRows, [
+      { header: "Date", width: 90, value: row => formatPdfDate(row.created_at) },
+      { header: "User", width: 155, value: row => truncatePdfText(row.user_name || row.user_email || "—", 26) },
+      { header: "Sponsor", width: 90, value: row => truncatePdfText(row.sponsor_name || "—", 14) },
+      { header: "Product", width: 70, value: row => truncatePdfText(row.metadata?.product_id || "—", 12) },
+      { header: "Points", width: 60, value: row => row.metadata?.points_spent ?? "—" },
+      { header: "Shipping", width: 95, value: row => truncatePdfText(row.metadata?.shipping_method || "—", 14) }
+    ]);
+
+    renderEventSection("Driver Applications", applicationRows, [
+      { header: "Date", width: 95, value: row => formatPdfDate(row.created_at) },
+      { header: "User", width: 140, value: row => truncatePdfText(row.user_name || row.user_email || "—", 24) },
+      { header: "Sponsor", width: 110, value: row => truncatePdfText(row.sponsor_name || "—", 18) },
+      { header: "Status", width: 75, value: row => truncatePdfText(row.status || "—", 10) },
+      { header: "Reason", width: 140, value: row => truncatePdfText(row.metadata?.rejection_reason || "—", 24) }
+    ]);
+
+    renderEventSection("Account Created Events", accountCreatedRows, [
+      { header: "Date", width: 110, value: row => formatPdfDate(row.created_at) },
+      { header: "User", width: 180, value: row => truncatePdfText(row.user_name || row.user_email || "—", 30) },
+      { header: "Role", width: 80, value: row => truncatePdfText(row.user_role || "—", 12) },
+      { header: "Sponsor", width: 140, value: row => truncatePdfText(row.sponsor_name || "—", 22) }
+    ]);
+
+    doc.end();
+  } catch (err) {
+    console.error("audit logs pdf export error:", err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: "Could not generate PDF report." });
+    }
+  }
+});
+
 //Start server
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on http://localhost:${PORT}`);

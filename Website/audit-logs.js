@@ -40,6 +40,7 @@
   const scopeNotice         = document.getElementById('scopeNotice');
   const sponsorFilterSection  = document.getElementById('sponsorFilterSection');
   const sponsorFilterDivider2 = document.getElementById('sponsorFilterDivider2');
+  const btnExportPdf        = document.getElementById('btnExportPdf');
 
   // ── Chip group helper ────────────────────────────────────────
   function initChipGroup(rowId, dataAttr, onSelect) {
@@ -343,6 +344,7 @@
   btnPrev.addEventListener('click', () => { if (currentPage > 1) fetchLogs(currentPage - 1); });
   btnNext.addEventListener('click', () => { if (currentPage < totalPages) fetchLogs(currentPage + 1); });
   filterSearch.addEventListener('keydown', e => { if (e.key === 'Enter') fetchLogs(1); });
+  btnExportPdf?.addEventListener("click", exportAuditLogsPdf);
 
   // ── Init ─────────────────────────────────────────────────────
   async function init() {
@@ -408,6 +410,46 @@
     } catch (err) {
       console.error('audit-logs init error:', err);
       window.location.href = '/Website/login.html';
+    }
+  }
+    async function exportAuditLogsPdf() {
+    try {
+      const payload = {
+        event_types: Array.isArray(filters.events) ? filters.events : [],
+        sponsor: filters.sponsor || "",
+        status: filters.status || "",
+        search: (filterSearch?.value || "").trim(),
+        ...rangeToDateParams()
+      };
+
+      const response = await fetch("/api/admin/audit-logs/pdf", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        alert(err.error || "Failed to generate PDF report.");
+        return;
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "audit-log-report.pdf";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Audit log PDF export error:", err);
+      alert("Failed to generate PDF report.");
     }
   }
 
