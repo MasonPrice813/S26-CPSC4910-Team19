@@ -2619,12 +2619,35 @@ app.post("/api/notifications/read-all", requireLogin, async (req, res) => {
 app.get("/api/catalog/hidden-product-ids", requireLogin, async (req, res) => {
   try {
     const me = req.session.user;
+    const requestedSponsor = String(req.query.sponsor || "").trim();
     let sponsor = null;
 
     if (me.role === "Admin") {
-      sponsor = String(req.query.sponsor || "").trim() || null;
-    } else {
+      sponsor = requestedSponsor || null;
+    } else if (me.role === "Sponsor") {
       sponsor = me.sponsor || null;
+    } else if (me.role === "Driver") {
+      sponsor = requestedSponsor || null;
+
+      if (!sponsor) {
+        return res.json({ productIds: [] });
+      }
+
+      const [membershipRows] = await pool.query(
+        `SELECT 1
+         FROM user_sponsors
+         WHERE user_id = ?
+           AND sponsor_name = ?
+           AND status = 'Active'
+         LIMIT 1`,
+        [me.id, sponsor]
+      );
+
+      if (membershipRows.length === 0) {
+        return res.status(403).json({ error: "Unauthorized sponsor selection." });
+      }
+    } else {
+      sponsor = null;
     }
 
     if (!sponsor) {
