@@ -4207,26 +4207,29 @@ app.get("/api/admin/audit-logs", requireLogin, async (req, res) => {
   try {
     const me = req.session.user;
 
-    // ── Access control check for non-admins ──────────────────
     let scopeSponsor = null;
-    let scopeUserId  = null;
+    let scopeUserId = null;
 
     if (me.role !== "Admin") {
       const roleKey = me.role === "Sponsor" ? "sponsor" : "driver";
+
       const [settingRows] = await pool.query(
-        `SELECT access_level FROM audit_access_settings WHERE role_type = ?`,
+        `SELECT access_level
+         FROM audit_access_settings
+         WHERE role_type = ?`,
         [roleKey]
       );
+
       const level = settingRows[0]?.access_level ?? "none";
 
       if (level === "none") {
         return res.status(403).json({ error: "Access to audit logs is disabled." });
       }
+
       if (level === "own") {
         if (me.role === "Sponsor") scopeSponsor = me.sponsor;
-        if (me.role === "Driver")  scopeUserId  = me.id;
+        if (me.role === "Driver") scopeUserId = me.id;
       }
-      // level === "all" → no scope restriction
     }
 
     const {
@@ -4238,165 +4241,193 @@ app.get("/api/admin/audit-logs", requireLogin, async (req, res) => {
       search
     } = req.query || {};
 
-    const page   = Math.max(1,   parseInt(req.query.page,  10) || 1);
-    const limit  = Math.min(200, parseInt(req.query.limit, 10) || 50);
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(200, parseInt(req.query.limit, 10) || 50);
     const offset = (page - 1) * limit;
 
     const validEventTypes = new Set([
-      "login", "login_failed", "purchase",
-      "driver_application", "account_created"
+      "login",
+      "login_failed",
+      "purchase",
+      "driver_application",
+      "account_created"
     ]);
+
     const validStatuses = new Set(["success", "failure", "pending"]);
 
     const selectedEventTypes = String(event_types || "")
-      .split(",").map(s => s.trim()).filter(Boolean)
+      .split(",")
+      .map(s => s.trim())
+      .filter(Boolean)
       .filter(t => validEventTypes.has(t));
 
     const statusFilter = validStatuses.has(String(status || "")) ? String(status) : null;
 
-    // Scope enforcement — scopeSponsor/scopeUserId override user-supplied sponsor filter
     const sponsorFilter = scopeSponsor
       ? scopeSponsor
       : (String(sponsor || "").trim() || null);
 
     const searchFilter = String(search || "").trim() || null;
     const fromDate = date_from ? new Date(`${date_from}T00:00:00`) : null;
-    const toDate   = date_to   ? new Date(`${date_to}T23:59:59`)   : null;
+    const toDate = date_to ? new Date(`${date_to}T23:59:59`) : null;
 
-    const sources      = [];
+    const sources = [];
     const sourceParams = [];
 
-    function sqlList(list) {
-      return list.map(() => "?").join(", ");
-    }
+    const sqlList = arr => arr.map(() => "?").join(",");
 
-    // ── LOGIN ATTEMPTS ────────────────────────────────────────
-    // Scoped to user if driver "own" — login_attempts has no sponsor_name,
-    // so sponsor-scoped sponsors see no login events (correct behaviour).
-    const loginUserScope = scopeUserId
-      ? `AND u.id = ?`
-      : (scopeSponsor ? `AND 1=0` : ""); // sponsors with "own" don't see logins
+    const loginSponsorScope = sponsorFilter ? `AND u.sponsor = ?` : "";
+    const loginUserScope = scopeUserId ? `AND u.id = ?` : "";
 
     sources.push(`
       SELECT
-        CONCAT('login_', LOWER(la.status), '_', la.id) AS source_key,
-        CASE WHEN la.status = 'SUCCESS' THEN 'login' ELSE 'login_failed' END AS event_type,
-        CASE WHEN la.status = 'SUCCESS' THEN 'Login successful' ELSE 'Login failed' END AS description,
-        LOWER(la.status) AS status,
-        NULL AS sponsor_name,
+        CONCAT('login_', la.id) AS source_key,
+        CASE
+          WHEN LOWER(la.status) = 'success' THEN 'login'
+          ELSE 'login_failed'
+        END AS event_type,
+        CASE
+          WHEN LOWER(la.status) = 'success' THEN 'Successful login'
+          ELSE 'Failed login attempt'
+        END AS description,
+        CASE
+          WHEN LOWER(la.status) = 'success' THEN 'success'
+          ELSE 'failure'
+        END AS status,
+        u.sponsor AS sponsor_name,
         NULL AS ip_address,
         la.attempt_time AS created_at,
         NULL AS metadata,
         u.id AS user_id,
-        COALESCE(u.email, la.username) AS user_email,
+        u.email AS user_email,
         u.role AS user_role,
         TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))) AS user_name
       FROM login_attempts la
-      LEFT JOIN users u ON u.username = la.username
+      LEFT JOIN users u
+        ON u.username = la.username
       WHERE 1=1
         ${loginUserScope}
-        ${selectedEventTypes.length ? `AND CASE WHEN la.status = 'SUCCESS' THEN 'login' ELSE 'login_failed' END IN (${sqlList(selectedEventTypes)})` : ""}
-        ${statusFilter  ? `AND LOWER(la.status) = ?` : ""}
-        ${fromDate      ? `AND la.attempt_time >= ?` : ""}
-        ${toDate        ? `AND la.attempt_time <= ?` : ""}
-        ${searchFilter  ? `AND (la.username LIKE ? OR COALESCE(u.email,'') LIKE ? OR COALESCE(u.first_name,'') LIKE ? OR COALESCE(u.last_name,'') LIKE ?)` : ""}
+        ${selectedEventTypes.length ? `AND CASE WHEN LOWER(la.status) = 'success' THEN 'login' ELSE 'login_failed' END IN (${sqlList(selectedEventTypes)})` : ""}
+        ${loginSponsorScope}
+        ${fromDate ? `AND la.attempt_time >= ?` : ""}
+        ${toDate ? `AND la.attempt_time <= ?` : ""}
+        ${searchFilter ? `AND (la.username LIKE ? OR u.email LIKE ? OR u.first_name LIKE ? OR u.last_name LIKE ?)` : ""}
     `);
 
-    if (scopeUserId)              sourceParams.push(scopeUserId);
+    if (scopeUserId) sourceParams.push(scopeUserId);
     if (selectedEventTypes.length) sourceParams.push(...selectedEventTypes);
-    if (statusFilter)             sourceParams.push(statusFilter);
-    if (fromDate)                 sourceParams.push(fromDate);
-    if (toDate)                   sourceParams.push(toDate);
-    if (searchFilter) { const like = `%${searchFilter}%`; sourceParams.push(like, like, like, like); }
+    if (sponsorFilter) sourceParams.push(sponsorFilter);
+    if (fromDate) sourceParams.push(fromDate);
+    if (toDate) sourceParams.push(toDate);
+    if (searchFilter) {
+      const like = `%${searchFilter}%`;
+      sourceParams.push(like, like, like, like);
+    }
 
-    // ── PURCHASES ─────────────────────────────────────────────
-    const purchaseUserScope   = scopeUserId  ? `AND u.id = ?`           : "";
     const purchaseSponsorScope = sponsorFilter ? `AND o.sponsor_name = ?` : "";
+    const purchaseUserScope = scopeUserId ? `AND o.user_id = ?` : "";
 
     sources.push(`
       SELECT
-        CONCAT('purchase_', o.group_id) AS source_key,
+        CONCAT('order_', o.id) AS source_key,
         'purchase' AS event_type,
-        CONCAT('Catalog checkout (', COUNT(*), ' item', IF(COUNT(*) = 1, '', 's'), ', ', o.shipping_method, ')') AS description,
+        CONCAT('Catalog purchase: product ', o.product_id) AS description,
         'success' AS status,
         o.sponsor_name AS sponsor_name,
         NULL AS ip_address,
-        MAX(o.date_ordered) AS created_at,
+        o.date_ordered AS created_at,
         JSON_OBJECT(
-          'points_spent', COALESCE(SUM(o.point_cost), 0),
-          'dollars_spent', COALESCE(SUM(o.dollar_cost), 0),
-          'item_count', COUNT(*),
-          'group_id', o.group_id,
-          'shipping_method', MAX(o.shipping_method)
+          'product_id', o.product_id,
+          'points_spent', o.point_cost,
+          'dollar_cost', o.dollar_cost,
+          'shipping_method', o.shipping_method,
+          'group_id', o.group_id
         ) AS metadata,
         u.id AS user_id,
         u.email AS user_email,
         u.role AS user_role,
         TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))) AS user_name
       FROM orders o
-      JOIN users u ON u.id = o.user_id
+      JOIN users u
+        ON u.id = o.user_id
       WHERE 1=1
         ${purchaseUserScope}
         ${selectedEventTypes.length ? `AND 'purchase' IN (${sqlList(selectedEventTypes)})` : ""}
-        ${statusFilter        ? `AND 'success' = ?`        : ""}
         ${purchaseSponsorScope}
-        ${fromDate            ? `AND o.date_ordered >= ?`  : ""}
-        ${toDate              ? `AND o.date_ordered <= ?`  : ""}
-        ${searchFilter        ? `AND (u.email LIKE ? OR u.first_name LIKE ? OR u.last_name LIKE ? OR o.group_id LIKE ? OR o.sponsor_name LIKE ?)` : ""}
-      GROUP BY o.group_id, o.sponsor_name, u.id, u.email, u.role, u.first_name, u.last_name
+        ${fromDate ? `AND o.date_ordered >= ?` : ""}
+        ${toDate ? `AND o.date_ordered <= ?` : ""}
+        ${searchFilter ? `AND (u.email LIKE ? OR u.first_name LIKE ? OR u.last_name LIKE ? OR o.product_id LIKE ?)` : ""}
     `);
 
-    if (scopeUserId)               sourceParams.push(scopeUserId);
+    if (scopeUserId) sourceParams.push(scopeUserId);
     if (selectedEventTypes.length) sourceParams.push(...selectedEventTypes);
-    if (statusFilter)              sourceParams.push("success");
-    if (sponsorFilter)             sourceParams.push(sponsorFilter);
-    if (fromDate)                  sourceParams.push(fromDate);
-    if (toDate)                    sourceParams.push(toDate);
-    if (searchFilter) { const like = `%${searchFilter}%`; sourceParams.push(like, like, like, like, like); }
+    if (sponsorFilter) sourceParams.push(sponsorFilter);
+    if (fromDate) sourceParams.push(fromDate);
+    if (toDate) sourceParams.push(toDate);
+    if (searchFilter) {
+      const like = `%${searchFilter}%`;
+      sourceParams.push(like, like, like, like);
+    }
 
-    // ── DRIVER APPLICATIONS ───────────────────────────────────
     const appSponsorScope = sponsorFilter ? `AND aps.sponsor_name = ?` : "";
-    const appUserScope    = scopeUserId
-      ? `AND a.email = (SELECT email FROM users WHERE id = ?)`
-      : "";
+    const appUserScope = scopeUserId ? `AND u.id = ?` : "";
 
     sources.push(`
       SELECT
-        CONCAT('application_', a.id) AS source_key,
+        CONCAT('application_', a.id, '_', aps.sponsor_name) AS source_key,
         'driver_application' AS event_type,
-        CONCAT('Driver application submitted for ', aps.sponsor_name) AS description,
-        LOWER(a.status) AS status,
+        CONCAT(
+          'Driver application submitted',
+          CASE
+            WHEN a.status = 'Accepted' THEN ' (accepted)'
+            WHEN a.status = 'Rejected' THEN ' (rejected)'
+            ELSE ''
+          END
+        ) AS description,
+        CASE
+          WHEN a.status = 'Pending' THEN 'pending'
+          WHEN a.status = 'Accepted' THEN 'success'
+          WHEN a.status = 'Rejected' THEN 'failure'
+          ELSE LOWER(a.status)
+        END AS status,
         aps.sponsor_name AS sponsor_name,
         NULL AS ip_address,
-        a.created_at AS created_at,
-        NULL AS metadata,
-        NULL AS user_id,
+        COALESCE(a.reviewed_at, a.created_at) AS created_at,
+        JSON_OBJECT(
+          'application_id', a.id,
+          'application_status', a.status,
+          'rejection_reason', a.rejection_reason
+        ) AS metadata,
+        u.id AS user_id,
         a.email AS user_email,
-        a.role AS user_role,
+        'Driver' AS user_role,
         TRIM(CONCAT(COALESCE(a.first_name, ''), ' ', COALESCE(a.last_name, ''))) AS user_name
       FROM applications a
-      JOIN application_sponsors aps ON aps.application_id = a.id
+      JOIN application_sponsors aps
+        ON aps.application_id = a.id
+      LEFT JOIN users u
+        ON u.email = a.email
       WHERE a.role = 'Driver'
         ${appUserScope}
         ${selectedEventTypes.length ? `AND 'driver_application' IN (${sqlList(selectedEventTypes)})` : ""}
-        ${statusFilter    ? `AND LOWER(a.status) = ?`   : ""}
         ${appSponsorScope}
-        ${fromDate        ? `AND a.created_at >= ?`     : ""}
-        ${toDate          ? `AND a.created_at <= ?`     : ""}
-        ${searchFilter    ? `AND (a.email LIKE ? OR a.first_name LIKE ? OR a.last_name LIKE ? OR aps.sponsor_name LIKE ?)` : ""}
+        ${fromDate ? `AND COALESCE(a.reviewed_at, a.created_at) >= ?` : ""}
+        ${toDate ? `AND COALESCE(a.reviewed_at, a.created_at) <= ?` : ""}
+        ${searchFilter ? `AND (a.email LIKE ? OR a.first_name LIKE ? OR a.last_name LIKE ? OR aps.sponsor_name LIKE ?)` : ""}
     `);
 
-    if (scopeUserId)               sourceParams.push(scopeUserId);
+    if (scopeUserId) sourceParams.push(scopeUserId);
     if (selectedEventTypes.length) sourceParams.push(...selectedEventTypes);
-    if (statusFilter)              sourceParams.push(statusFilter);
-    if (sponsorFilter)             sourceParams.push(sponsorFilter);
-    if (fromDate)                  sourceParams.push(fromDate);
-    if (toDate)                    sourceParams.push(toDate);
-    if (searchFilter) { const like = `%${searchFilter}%`; sourceParams.push(like, like, like, like); }
+    if (sponsorFilter) sourceParams.push(sponsorFilter);
+    if (fromDate) sourceParams.push(fromDate);
+    if (toDate) sourceParams.push(toDate);
+    if (searchFilter) {
+      const like = `%${searchFilter}%`;
+      sourceParams.push(like, like, like, like);
+    }
 
-    // ── ACCOUNT CREATED ───────────────────────────────────────
     const acctSponsorScope = sponsorFilter ? `AND u.sponsor = ?` : "";
-    const acctUserScope    = scopeUserId   ? `AND u.id = ?`      : "";
+    const acctUserScope = scopeUserId ? `AND u.id = ?` : "";
 
     sources.push(`
       SELECT
@@ -4416,46 +4447,69 @@ app.get("/api/admin/audit-logs", requireLogin, async (req, res) => {
       WHERE 1=1
         ${acctUserScope}
         ${selectedEventTypes.length ? `AND 'account_created' IN (${sqlList(selectedEventTypes)})` : ""}
-        ${statusFilter    ? `AND 'success' = ?`        : ""}
         ${acctSponsorScope}
-        ${fromDate        ? `AND u.time_created >= ?`  : ""}
-        ${toDate          ? `AND u.time_created <= ?`  : ""}
-        ${searchFilter    ? `AND (u.email LIKE ? OR u.username LIKE ? OR u.first_name LIKE ? OR u.last_name LIKE ?)` : ""}
+        ${fromDate ? `AND u.time_created >= ?` : ""}
+        ${toDate ? `AND u.time_created <= ?` : ""}
+        ${searchFilter ? `AND (u.email LIKE ? OR u.username LIKE ? OR u.first_name LIKE ? OR u.last_name LIKE ?)` : ""}
     `);
 
-    if (scopeUserId)               sourceParams.push(scopeUserId);
+    if (scopeUserId) sourceParams.push(scopeUserId);
     if (selectedEventTypes.length) sourceParams.push(...selectedEventTypes);
-    if (statusFilter)              sourceParams.push("success");
-    if (sponsorFilter)             sourceParams.push(sponsorFilter);
-    if (fromDate)                  sourceParams.push(fromDate);
-    if (toDate)                    sourceParams.push(toDate);
-    if (searchFilter) { const like = `%${searchFilter}%`; sourceParams.push(like, like, like, like); }
+    if (sponsorFilter) sourceParams.push(sponsorFilter);
+    if (fromDate) sourceParams.push(fromDate);
+    if (toDate) sourceParams.push(toDate);
+    if (searchFilter) {
+      const like = `%${searchFilter}%`;
+      sourceParams.push(like, like, like, like);
+    }
 
-    // ── Run query ─────────────────────────────────────────────
     const unionSql = sources.join("\nUNION ALL\n");
 
+    const outerWhere = [];
+    const outerParams = [];
+
+    if (statusFilter) {
+      outerWhere.push(`combined.status = ?`);
+      outerParams.push(statusFilter);
+    }
+
+    const outerWhereSql = outerWhere.length
+      ? `WHERE ${outerWhere.join(" AND ")}`
+      : "";
+
     const [[countRow]] = await pool.query(
-      `SELECT COUNT(*) AS total FROM (${unionSql}) combined`,
-      sourceParams
+      `
+      SELECT COUNT(*) AS total
+      FROM (${unionSql}) combined
+      ${outerWhereSql}
+      `,
+      [...sourceParams, ...outerParams]
     );
 
     const [rows] = await pool.query(
-      `SELECT * FROM (${unionSql}) combined ORDER BY created_at DESC LIMIT ? OFFSET ?`,
-      [...sourceParams, limit, offset]
+      `
+      SELECT *
+      FROM (${unionSql}) combined
+      ${outerWhereSql}
+      ORDER BY created_at DESC
+      LIMIT ? OFFSET ?
+      `,
+      [...sourceParams, ...outerParams, limit, offset]
     );
 
     res.json({
       data: rows.map(row => ({
         ...row,
-        metadata: row.metadata && typeof row.metadata === "string"
-          ? JSON.parse(row.metadata)
-          : row.metadata || null
+        metadata:
+          row.metadata && typeof row.metadata === "string"
+            ? JSON.parse(row.metadata)
+            : row.metadata || null
       })),
       pagination: {
         total: Number(countRow.total || 0),
         page,
         limit,
-        pages: Math.ceil(Number(countRow.total || 0) / limit)
+        pages: Math.max(1, Math.ceil(Number(countRow.total || 0) / limit))
       }
     });
   } catch (err) {
