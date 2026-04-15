@@ -41,6 +41,7 @@
   const sponsorFilterSection  = document.getElementById('sponsorFilterSection');
   const sponsorFilterDivider2 = document.getElementById('sponsorFilterDivider2');
   const btnExportPdf        = document.getElementById('btnExportPdf');
+  const btnExportCsv        = document.getElementById('btnExportCsv');
 
   // ── Chip group helper ────────────────────────────────────────
   function initChipGroup(rowId, dataAttr, onSelect) {
@@ -345,6 +346,7 @@
   btnNext.addEventListener('click', () => { if (currentPage < totalPages) fetchLogs(currentPage + 1); });
   filterSearch.addEventListener('keydown', e => { if (e.key === 'Enter') fetchLogs(1); });
   btnExportPdf?.addEventListener("click", exportAuditLogsPdf);
+  btnExportCsv?.addEventListener("click", exportAuditLogsCsv);
 
   // ── Init ─────────────────────────────────────────────────────
   async function init() {
@@ -450,6 +452,47 @@
     } catch (err) {
       console.error("Audit log PDF export error:", err);
       alert("Failed to generate PDF report.");
+    }
+  }
+
+  async function exportAuditLogsCsv() {
+    try {
+      const payload = {
+        event_types: Array.isArray(filters.events) ? filters.events : [],
+        sponsor: filters.sponsor || "",
+        status: filters.status || "",
+        search: (filterSearch?.value || "").trim(),
+        ...rangeToDateParams()
+      };
+
+      const response = await fetch("/api/admin/audit-logs/csv", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        alert(err.error || "Failed to generate CSV report.");
+        return;
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "audit-log-report.csv";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Audit log CSV export error:", err);
+      alert("Failed to generate CSV report.");
     }
   }
 

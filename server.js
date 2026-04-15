@@ -5223,6 +5223,388 @@ app.post("/api/admin/audit-logs/pdf", requireLogin, async (req, res) => {
   }
 });
 
+function escapeCsv(value) {
+  if (value == null) return "";
+  const str = String(value);
+  if (/[",\n]/.test(str)) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
+app.post("/api/admin/audit-logs/csv", requireLogin, async (req, res) => {
+  try {
+    const me = req.session.user;
+
+    // ── Access control ────────────────────────────────────────
+    let scopeSponsor = null;
+    let scopeUserId = null;
+
+    if (me.role !== "Admin") {
+      const roleKey = me.role === "Sponsor" ? "sponsor" : "driver";
+
+      const [settingRows] = await pool.query(
+        `SELECT access_level
+         FROM audit_access_settings
+         WHERE role_type = ?`,
+        [roleKey]
+      );
+
+      const level = settingRows[0]?.access_level ?? "none";
+
+      if (level === "none") {
+        return res.status(403).json({ error: "Access to audit logs is disabled." });
+      }
+
+      if (level === "own") {
+        if (me.role === "Sponsor") scopeSponsor = me.sponsor;
+        if (me.role === "Driver") scopeUserId = me.id;
+      }
+    }
+
+    const {
+      event_types = [],
+      sponsor = "",
+      status = "",
+      date_from = "",
+      date_to = "",
+      search = ""
+    } = req.body || {};
+
+    const validEventTypes = new Set([
+      "login",
+      "login_failed",
+      "purchase",
+      "driver_application",
+      "account_created"
+    ]);
+
+    const validStatuses = new Set(["success", "failure", "pending"]);
+
+    const selectedEventTypes = Array.isArray(event_types)
+      ? event_types.map(v => String(v).trim()).filter(v => validEventTypes.has(v))
+      : String(event_types || "")
+          .split(",")
+          .map(v => v.trim())
+          .filter(v => validEventTypes.has(v));
+
+    const statusFilter = validStatuses.has(String(status || "").trim())
+      ? String(status).trim()
+      : null;
+
+    const sponsorFilter = scopeSponsor
+      ? scopeSponsor
+      : (String(sponsor || "").trim() || null);
+
+    const searchFilter = String(search || "").trim() || null;
+    const fromDate = date_from ? new Date(`${date_from}T00:00:00`) : null;
+    const toDate = date_to ? new Date(`${date_to}T23:59:59`) : null;
+
+    if (date_from && Number.isNaN(fromDate?.getTime())) {
+      return res.status(400).json({ error: "Invalid start date." });
+    }
+
+    if (date_to && Number.isNaN(toDate?.getTime())) {
+      return res.status(400).json({ error: "Invalid end date." });
+    }
+
+    if (fromDate && toDate && fromDate > toDate) {
+      return res.status(400).json({ error: "Start date cannot be after end date." });
+    }
+
+    const sources = [];
+    const sourceParams = [];
+    const sqlList = arr => arr.map(() => "?").join(",");
+
+    // ── LOGIN / LOGIN FAILED ──────────────────────────────────
+    const loginSponsorScope = sponsorFilter ? `AND u.sponsor = ?` : "";
+    const loginUserScope = scopeUserId ? `AND u.id = ?` : "";
+
+    sources.push(`
+      SELECT
+        CONCAT('login_', la.id) AS source_key,
+        CASE
+          WHEN LOWER(la.status) = 'success' THEN 'login'
+          ELSE 'login_failed'
+        END AS event_type,
+        CASE
+          WHEN LOWER(la.status) = 'success' THEN 'Successful login'
+          ELSE 'Failed login attempt'
+        END AS description,
+        CASE
+          WHEN LOWER(la.status) = 'success' THEN 'success'
+          ELSE 'failure'
+        END AS status,
+        u.sponsor AS sponsor_name,
+        NULL AS ip_address,
+        la.attempt_time AS created_at,
+        NULL AS metadata,
+        u.id AS user_id,
+        u.email AS user_email,
+        u.role AS user_role,
+        TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))) AS user_name
+      FROM login_attempts la
+      LEFT JOIN users u
+        ON u.username = la.username
+      WHERE 1=1
+        ${loginUserScope}
+        ${selectedEventTypes.length
+          ? `AND (CASE WHEN LOWER(la.status) = 'success' THEN 'login' ELSE 'login_failed' END) IN (${sqlList(selectedEventTypes)})`
+          : ""}
+        ${statusFilter ? `AND LOWER(la.status) = ?` : ""}
+        ${loginSponsorScope}
+        ${fromDate ? `AND la.attempt_time >= ?` : ""}
+        ${toDate ? `AND la.attempt_time <= ?` : ""}
+        ${searchFilter ? `AND (
+          la.username LIKE ?
+          OR u.email LIKE ?
+          OR CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, '')) LIKE ?
+        )` : ""}
+    `);
+
+    if (scopeUserId) sourceParams.push(scopeUserId);
+    if (selectedEventTypes.length) sourceParams.push(...selectedEventTypes);
+    if (statusFilter) sourceParams.push(statusFilter);
+    if (sponsorFilter) sourceParams.push(sponsorFilter);
+    if (fromDate) sourceParams.push(fromDate);
+    if (toDate) sourceParams.push(toDate);
+    if (searchFilter) {
+      const like = `%${searchFilter}%`;
+      sourceParams.push(like, like, like);
+    }
+
+    // ── PURCHASES ─────────────────────────────────────────────
+    const purchaseSponsorScope = sponsorFilter ? `AND o.sponsor_name = ?` : "";
+    const purchaseUserScope = scopeUserId ? `AND o.user_id = ?` : "";
+
+    sources.push(`
+      SELECT
+        CONCAT('purchase_', o.id) AS source_key,
+        'purchase' AS event_type,
+        'Purchase completed' AS description,
+        'success' AS status,
+        o.sponsor_name AS sponsor_name,
+        NULL AS ip_address,
+        o.date_ordered AS created_at,
+        JSON_OBJECT(
+          'product_id', o.product_id,
+          'points_spent', o.point_cost,
+          'dollar_cost', o.dollar_cost,
+          'shipping_method', o.shipping_method
+        ) AS metadata,
+        u.id AS user_id,
+        u.email AS user_email,
+        u.role AS user_role,
+        TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))) AS user_name
+      FROM orders o
+      JOIN users u
+        ON u.id = o.user_id
+      WHERE 1=1
+        ${purchaseUserScope}
+        ${selectedEventTypes.length ? `AND 'purchase' IN (${sqlList(selectedEventTypes)})` : ""}
+        ${statusFilter ? `AND ? = 'success'` : ""}
+        ${purchaseSponsorScope}
+        ${fromDate ? `AND o.date_ordered >= ?` : ""}
+        ${toDate ? `AND o.date_ordered <= ?` : ""}
+        ${searchFilter ? `AND (
+          u.email LIKE ?
+          OR CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, '')) LIKE ?
+          OR o.product_id LIKE ?
+        )` : ""}
+    `);
+
+    if (scopeUserId) sourceParams.push(scopeUserId);
+    if (selectedEventTypes.length) sourceParams.push(...selectedEventTypes);
+    if (statusFilter) sourceParams.push(statusFilter);
+    if (sponsorFilter) sourceParams.push(sponsorFilter);
+    if (fromDate) sourceParams.push(fromDate);
+    if (toDate) sourceParams.push(toDate);
+    if (searchFilter) {
+      const like = `%${searchFilter}%`;
+      sourceParams.push(like, like, like);
+    }
+
+    // ── DRIVER APPLICATIONS ───────────────────────────────────
+    const appSponsorScope = sponsorFilter ? `AND aps.sponsor_name = ?` : "";
+    const appUserScope = scopeUserId ? `AND u.id = ?` : "";
+
+    sources.push(`
+      SELECT
+        CONCAT('application_', a.id, '_', aps.sponsor_name) AS source_key,
+        'driver_application' AS event_type,
+        'Driver application submitted/reviewed' AS description,
+        CASE
+          WHEN LOWER(a.status) = 'accepted' THEN 'success'
+          WHEN LOWER(a.status) = 'rejected' THEN 'failure'
+          ELSE 'pending'
+        END AS status,
+        aps.sponsor_name AS sponsor_name,
+        NULL AS ip_address,
+        COALESCE(a.reviewed_at, a.created_at) AS created_at,
+        JSON_OBJECT(
+          'application_status', a.status,
+          'rejection_reason', a.rejection_reason
+        ) AS metadata,
+        u.id AS user_id,
+        a.email AS user_email,
+        'Driver' AS user_role,
+        TRIM(CONCAT(COALESCE(a.first_name, ''), ' ', COALESCE(a.last_name, ''))) AS user_name
+      FROM applications a
+      JOIN application_sponsors aps
+        ON aps.application_id = a.id
+      LEFT JOIN users u
+        ON u.email = a.email
+      WHERE a.role = 'Driver'
+        ${appUserScope}
+        ${selectedEventTypes.length ? `AND 'driver_application' IN (${sqlList(selectedEventTypes)})` : ""}
+        ${statusFilter ? `
+          AND (
+            CASE
+              WHEN LOWER(a.status) = 'accepted' THEN 'success'
+              WHEN LOWER(a.status) = 'rejected' THEN 'failure'
+              ELSE 'pending'
+            END
+          ) = ?
+        ` : ""}
+        ${appSponsorScope}
+        ${fromDate ? `AND COALESCE(a.reviewed_at, a.created_at) >= ?` : ""}
+        ${toDate ? `AND COALESCE(a.reviewed_at, a.created_at) <= ?` : ""}
+        ${searchFilter ? `AND (
+          a.email LIKE ?
+          OR CONCAT(COALESCE(a.first_name, ''), ' ', COALESCE(a.last_name, '')) LIKE ?
+          OR COALESCE(a.rejection_reason, '') LIKE ?
+        )` : ""}
+    `);
+
+    if (scopeUserId) sourceParams.push(scopeUserId);
+    if (selectedEventTypes.length) sourceParams.push(...selectedEventTypes);
+    if (statusFilter) sourceParams.push(statusFilter);
+    if (sponsorFilter) sourceParams.push(sponsorFilter);
+    if (fromDate) sourceParams.push(fromDate);
+    if (toDate) sourceParams.push(toDate);
+    if (searchFilter) {
+      const like = `%${searchFilter}%`;
+      sourceParams.push(like, like, like);
+    }
+
+    // ── ACCOUNT CREATED ───────────────────────────────────────
+    const acctSponsorScope = sponsorFilter ? `AND u.sponsor = ?` : "";
+    const acctUserScope = scopeUserId ? `AND u.id = ?` : "";
+
+    sources.push(`
+      SELECT
+        CONCAT('account_', u.id) AS source_key,
+        'account_created' AS event_type,
+        'Account created' AS description,
+        'success' AS status,
+        u.sponsor AS sponsor_name,
+        NULL AS ip_address,
+        u.time_created AS created_at,
+        NULL AS metadata,
+        u.id AS user_id,
+        u.email AS user_email,
+        u.role AS user_role,
+        TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))) AS user_name
+      FROM users u
+      WHERE 1=1
+        ${acctUserScope}
+        ${selectedEventTypes.length ? `AND 'account_created' IN (${sqlList(selectedEventTypes)})` : ""}
+        ${statusFilter ? `AND ? = 'success'` : ""}
+        ${acctSponsorScope}
+        ${fromDate ? `AND u.time_created >= ?` : ""}
+        ${toDate ? `AND u.time_created <= ?` : ""}
+        ${searchFilter ? `AND (
+          u.email LIKE ?
+          OR u.username LIKE ?
+          OR CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, '')) LIKE ?
+        )` : ""}
+    `);
+
+    if (scopeUserId) sourceParams.push(scopeUserId);
+    if (selectedEventTypes.length) sourceParams.push(...selectedEventTypes);
+    if (statusFilter) sourceParams.push(statusFilter);
+    if (sponsorFilter) sourceParams.push(sponsorFilter);
+    if (fromDate) sourceParams.push(fromDate);
+    if (toDate) sourceParams.push(toDate);
+    if (searchFilter) {
+      const like = `%${searchFilter}%`;
+      sourceParams.push(like, like, like);
+    }
+
+    const sql = `
+      SELECT *
+      FROM (
+        ${sources.join("\nUNION ALL\n")}
+      ) AS audit_rows
+      ORDER BY created_at DESC
+    `;
+
+    const [rows] = await pool.query(sql, sourceParams);
+
+    const normalizedRows = rows.map(row => {
+      const metadata =
+        row.metadata && typeof row.metadata === "string"
+          ? JSON.parse(row.metadata)
+          : row.metadata || null;
+
+      return {
+        ...row,
+        metadata
+      };
+    });
+
+    const header = [
+      "Date",
+      "Event",
+      "User Name",
+      "User Email",
+      "User Role",
+      "Sponsor",
+      "Description",
+      "Status",
+      "IP Address",
+      "Points Spent",
+      "Dollar Cost",
+      "Shipping Method",
+      "Product ID",
+      "Application Status",
+      "Rejection Reason"
+    ];
+
+    const csvRows = normalizedRows.map(row => [
+      row.created_at ? new Date(row.created_at).toLocaleString("en-US") : "",
+      row.event_type || "",
+      row.user_name || "",
+      row.user_email || "",
+      row.user_role || "",
+      row.sponsor_name || "",
+      row.description || "",
+      row.status || "",
+      row.ip_address || "",
+      row.metadata?.points_spent ?? "",
+      row.metadata?.dollar_cost ?? "",
+      row.metadata?.shipping_method ?? "",
+      row.metadata?.product_id ?? "",
+      row.metadata?.application_status ?? "",
+      row.metadata?.rejection_reason ?? ""
+    ]);
+
+    const csv = [
+      header.map(escapeCsv).join(","),
+      ...csvRows.map(r => r.map(escapeCsv).join(","))
+    ].join("\n");
+
+    const filename = `audit-log-report-${Date.now()}.csv`;
+
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.send(csv);
+  } catch (err) {
+    console.error("audit logs csv export error:", err);
+    res.status(500).json({ error: "Could not generate CSV report." });
+  }
+});
+
 //Start server
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on http://localhost:${PORT}`);
