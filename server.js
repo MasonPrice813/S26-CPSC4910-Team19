@@ -4898,6 +4898,7 @@ app.post("/api/admin/audit-logs/pdf", requireLogin, async (req, res) => {
     const usableWidth = pageWidth - 80;
     const bottomLimit = pageHeight - 45;
 
+
     function addPageIfNeeded(requiredHeight = 30) {
       if (doc.y + requiredHeight > bottomLimit) {
         doc.addPage();
@@ -5074,6 +5075,72 @@ app.post("/api/admin/audit-logs/pdf", requireLogin, async (req, res) => {
       doc.moveDown(1);
     }
 
+    function formatDollar(value) {
+      const num = Number(value);
+      if (!Number.isFinite(num)) return "—";
+      return `$${num.toFixed(2)}`;
+    }
+
+    function renderSponsorSpendingSummary(rows) {
+      const totals = new Map();
+
+      rows.forEach(row => {
+        const sponsor = row.sponsor_name || "Unknown Sponsor";
+        const dollars = Number(row.metadata?.dollar_cost || 0);
+
+        if (!Number.isFinite(dollars)) return;
+        totals.set(sponsor, (totals.get(sponsor) || 0) + dollars);
+      });
+
+      const summaryEntries = Array.from(totals.entries())
+        .sort((a, b) => a[0].localeCompare(b[0]));
+
+      const neededHeight = 26 + 18 + (summaryEntries.length || 1) * 16 + 12;
+      addPageIfNeeded(neededHeight);
+
+      const startY = doc.y;
+
+      doc
+        .font("Helvetica-Bold")
+        .fontSize(11)
+        .fillColor("#111827")
+        .text("Total Spending ($)", leftX, startY, {
+          width: usableWidth,
+          align: "left"
+        });
+
+      let lineY = doc.y + 4;
+
+      if (!summaryEntries.length) {
+        doc
+          .font("Helvetica")
+          .fontSize(10)
+          .fillColor("#4b5563")
+          .text("No purchase totals available.", leftX, lineY, {
+            width: usableWidth,
+            align: "left"
+          });
+
+        doc.moveDown(1);
+        return;
+      }
+
+      summaryEntries.forEach(([sponsor, total]) => {
+        doc
+          .font("Helvetica")
+          .fontSize(10)
+          .fillColor("#111827")
+          .text(`${sponsor}: $${total.toFixed(2)}`, leftX, lineY, {
+            width: usableWidth,
+            align: "left"
+          });
+
+        lineY += 16;
+      });
+
+      doc.y = lineY + 8;
+    }
+
     const loginRows = data.filter(row => row.event_type === "login");
     const failedLoginRows = data.filter(row => row.event_type === "login_failed");
     const purchaseRows = data.filter(row => row.event_type === "purchase");
@@ -5099,13 +5166,15 @@ app.post("/api/admin/audit-logs/pdf", requireLogin, async (req, res) => {
     ]);
 
     renderEventSection("Purchases", purchaseRows, [
-      { header: "Date", width: 90, value: row => formatPdfDate(row.created_at) },
-      { header: "User", width: 155, value: row => truncatePdfText(row.user_name || row.user_email || "—", 26) },
-      { header: "Sponsor", width: 90, value: row => truncatePdfText(row.sponsor_name || "—", 14) },
-      { header: "Product", width: 70, value: row => truncatePdfText(row.metadata?.product_id || "—", 12) },
+      { header: "Date", width: 88, value: row => formatPdfDate(row.created_at) },
+      { header: "User", width: 165, value: row => truncatePdfText(row.user_name || row.user_email || "—", 26) },
+      { header: "Sponsor", width: 95, value: row => truncatePdfText(row.sponsor_name || "—", 15) },
+      { header: "Product", width: 60, value: row => truncatePdfText(row.metadata?.product_id || "—", 10) },
       { header: "Points", width: 60, value: row => row.metadata?.points_spent ?? "—" },
-      { header: "Shipping", width: 95, value: row => truncatePdfText(row.metadata?.shipping_method || "—", 14) }
+      { header: "Price ($)", width: 112, value: row => formatDollar(row.metadata?.dollar_cost) }
     ]);
+
+    renderSponsorSpendingSummary(purchaseRows);
 
     renderEventSection("Driver Applications", applicationRows, [
       { header: "Date", width: 95, value: row => formatPdfDate(row.created_at) },
