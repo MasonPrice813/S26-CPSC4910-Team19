@@ -196,7 +196,7 @@ function handleSponsor(ctx) {
 
 function handleAdmin(ctx) {
   const { parsed, organizations, lineNumber } = ctx;
-  const { type, orgName } = parsed;
+  const { type, orgName, points} = parsed;
 
   if (type === "O") {
     if (!orgName?.trim()) {

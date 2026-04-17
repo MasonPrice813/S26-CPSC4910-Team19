@@ -3422,6 +3422,9 @@ app.post("/api/upload-bulk", uploadText.single("file"), async (req, res) => {
           "SELECT id, first_name, last_name FROM users WHERE email = ?",
           [r.email]
         );
+        if (r.action === "create_org") {
+          continue; 
+        }
         
         if (existing.length > 0) {
           r.action = "update_points";
@@ -3434,6 +3437,9 @@ app.post("/api/upload-bulk", uploadText.single("file"), async (req, res) => {
         }
 
         if (r.action === "create") {
+          if (!r.firstName || !r.lastName || !r.email) {
+            throw new Error(`Invalid user data for ${r.type}`);
+          }
           const finalOrg = r.org || req.session.user.sponsor;
 
           const [insertResult] = await conn.query(
