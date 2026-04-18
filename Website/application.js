@@ -188,14 +188,48 @@ document.addEventListener("DOMContentLoaded", () => {
 
 const roleSelect = document.getElementById("role");
 const sponsorGroup = document.getElementById("sponsorGroup");
+const sponsorLabel = document.getElementById("sponsorLabel");
 
-roleSelect.addEventListener("change", () => {
-  if (roleSelect.value === "Driver") {
+function syncSponsorSelectionUI() {
+  if (!roleSelect || !sponsorGroup) return;
+
+  const selectedRole = roleSelect.value;
+  const sponsorBoxes = Array.from(
+    document.querySelectorAll('input[name="sponsors"], input[name="sponsor"]')
+  );
+
+  if (selectedRole === "Driver" || selectedRole === "Sponsor") {
     sponsorGroup.style.display = "block";
   } else {
     sponsorGroup.style.display = "none";
+    sponsorBoxes.forEach((box) => {
+      box.checked = false;
+    });
+    return;
   }
-});
+
+  if (sponsorLabel) {
+    sponsorLabel.textContent =
+      selectedRole === "Sponsor" ? "Select Sponsor" : "Select Sponsor(s)";
+  }
+
+  if (selectedRole === "Sponsor") {
+    sponsorBoxes.forEach((box) => {
+      box.type = "radio";
+      box.name = "sponsor";
+    });
+  } else {
+    sponsorBoxes.forEach((box) => {
+      box.type = "checkbox";
+      box.name = "sponsors";
+    });
+  }
+}
+
+if (roleSelect) {
+  roleSelect.addEventListener("change", syncSponsorSelectionUI);
+  syncSponsorSelectionUI();
+}
 
 //Listening for form submit
 async function postJSON(url, body) {
@@ -223,6 +257,10 @@ function getSelectedSponsors() {
   ).map(cb => cb.value);
 }
 
+function getSelectedSponsor() {
+  return document.querySelector('input[name="sponsor"]:checked')?.value || "";
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   const form = document.querySelector(".application-form");
   if (!form) return;
@@ -232,11 +270,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const role = document.getElementById("role")?.value || "";
     const sponsors = role === "Driver" ? getSelectedSponsors() : [];
+    const sponsor = role === "Sponsor" ? getSelectedSponsor() : null;
 
     if (role === "Driver" && sponsors.length === 0) {
       alert("Please select at least one sponsor.");
       return;
-}
+    }
+
+    if (role === "Sponsor" && !sponsor) {
+      alert("Please select a sponsor.");
+      return;
+    }
 
     const payload = {
       role,
@@ -247,8 +291,8 @@ document.addEventListener("DOMContentLoaded", () => {
       password: document.getElementById("password")?.value || "",
       phone_number: document.getElementById("phone")?.value?.trim() || null,
 
-      //Only relevant for Driver, send null for sponsor and admin applications
       sponsors,
+      sponsor,
 
       ssn_last4: last4FromSSN(document.getElementById("ssn")?.value),
       age: Number(document.getElementById("age")?.value) || null,

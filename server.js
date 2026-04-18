@@ -267,6 +267,7 @@ app.post("/api/applications", async (req, res) => {
       email,
       phone_number,
       sponsors = [],
+      sponsor = null,
       ssn_last4,
       age,
       dob,
@@ -284,6 +285,10 @@ app.post("/api/applications", async (req, res) => {
 
     if (normalizedRole === "Driver" && (!Array.isArray(sponsors) || sponsors.length === 0)) {
       return res.status(400).json({ error: "Drivers must select at least one sponsor." });
+    }
+
+    if (normalizedRole === "Sponsor" && !String(sponsor || "").trim()) {
+      return res.status(400).json({ error: "Sponsors must select exactly one sponsor." });
     }
 
     await conn.beginTransaction();
@@ -321,6 +326,14 @@ app.post("/api/applications", async (req, res) => {
           [applicationId, sponsorName]
         );
       }
+    }
+
+    if (normalizedRole === "Sponsor") {
+      await conn.query(
+        `INSERT INTO application_sponsors (application_id, sponsor_name)
+         VALUES (?, ?)`,
+        [applicationId, String(sponsor).trim()]
+      );
     }
 
     await conn.commit();
