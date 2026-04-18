@@ -48,6 +48,9 @@ function card(app) {
     </div>
 
     <div class="app-grid">
+      <div class="app-label">Role</div>
+      <div class="app-value">${safe(app.role)}</div>
+
       <div class="app-label">Username</div>
       <div class="app-value">${safe(app.username)}</div>
 
@@ -152,7 +155,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const apps = data.applications || [];
 
     if (apps.length === 0) {
-      status.textContent = "No pending driver applications.";
+      status.textContent = "No pending applications.";
       return;
     }
 

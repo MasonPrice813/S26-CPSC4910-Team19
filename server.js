@@ -373,7 +373,7 @@ app.get("/api/sponsor/applications", requireSponsor, async (req, res) => {
         FROM applications a
         JOIN application_sponsors aps
           ON aps.application_id = a.id
-        WHERE a.role = 'Driver'
+        WHERE a.role IN ('Driver', 'Sponsor')
           AND aps.sponsor_name = ?
           AND a.status = 'Pending'
         ORDER BY a.id DESC`,
@@ -432,7 +432,6 @@ app.get("/api/bugs", async (req, res) => {
     }
 });
 
-//API to move driver data from applications table to users and drivers table
 app.post("/api/sponsor/applications/:id/approve", requireSponsor, async (req, res) => {
   const appId = Number(req.params.id);
   if (!Number.isFinite(appId)) {
@@ -447,6 +446,7 @@ app.post("/api/sponsor/applications/:id/approve", requireSponsor, async (req, re
     const [apps] = await conn.query(
       `SELECT
           a.id,
+          a.role,
           a.first_name,
           a.last_name,
           a.username,
@@ -457,7 +457,7 @@ app.post("/api/sponsor/applications/:id/approve", requireSponsor, async (req, re
        JOIN application_sponsors aps
          ON aps.application_id = a.id
        WHERE a.id = ?
-         AND a.role = 'Driver'
+         AND a.role IN ('Driver', 'Sponsor')
          AND aps.sponsor_name = ?
          AND a.status = 'Pending'
        FOR UPDATE`,
@@ -471,7 +471,6 @@ app.post("/api/sponsor/applications/:id/approve", requireSponsor, async (req, re
 
     const a = apps[0];
 
-    // Find or create user
     const [existingUsers] = await conn.query(
       `SELECT id
        FROM users
@@ -493,59 +492,73 @@ app.post("/api/sponsor/applications/:id/approve", requireSponsor, async (req, re
          VALUES
            (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          "Driver",
+          a.role,
           a.first_name,
           a.last_name,
           a.username,
           a.email,
           hashedPw,
           a.phone_number || null,
-          req.me.sponsor // compatibility field only
+          req.me.sponsor
         ]
       );
 
       userId = userResult.insertId;
     }
 
-    // Ensure drivers row exists
-    const [existingDriver] = await conn.query(
-      `SELECT id
-       FROM drivers
-       WHERE user_id = ?
-       LIMIT 1`,
-      [userId]
-    );
+    let driverId = null;
 
-    let driverId;
+    if (a.role === "Driver") {
+      const [existingDriver] = await conn.query(
+        `SELECT id
+         FROM drivers
+         WHERE user_id = ?
+         LIMIT 1`,
+        [userId]
+      );
 
-    if (existingDriver.length > 0) {
-      driverId = existingDriver[0].id;
-    } else {
-      const [driverResult] = await conn.query(
-        `INSERT INTO drivers (user_id)
+      if (existingDriver.length > 0) {
+        driverId = existingDriver[0].id;
+      } else {
+        const [driverResult] = await conn.query(
+          `INSERT INTO drivers (user_id)
+           VALUES (?)`,
+          [userId]
+        );
+        driverId = driverResult.insertId;
+      }
+
+      const [appSponsors] = await conn.query(
+        `SELECT sponsor_name
+         FROM application_sponsors
+         WHERE application_id = ?`,
+        [a.id]
+      );
+
+      for (const row of appSponsors) {
+        await conn.query(
+          `INSERT IGNORE INTO user_sponsors (user_id, sponsor_name, points, status)
+           VALUES (?, ?, 0, 'Active')`,
+          [userId, row.sponsor_name]
+        );
+      }
+    }
+
+    if (a.role === "Sponsor") {
+      await conn.query(
+        `INSERT IGNORE INTO sponsors (user_id)
          VALUES (?)`,
         [userId]
       );
-      driverId = driverResult.insertId;
-    }
 
-    // Link user to ALL sponsors on the application
-    const [appSponsors] = await conn.query(
-      `SELECT sponsor_name
-       FROM application_sponsors
-       WHERE application_id = ?`,
-      [a.id]
-    );
-
-    for (const row of appSponsors) {
       await conn.query(
-        `INSERT IGNORE INTO user_sponsors (user_id, sponsor_name, points, status)
-         VALUES (?, ?, 0, 'Active')`,
-        [userId, row.sponsor_name]
+        `UPDATE users
+         SET sponsor = ?
+         WHERE id = ?`,
+        [req.me.sponsor, userId]
       );
     }
 
-    // Mark application accepted
     await conn.query(
       `UPDATE applications
        SET status = 'Accepted',
@@ -588,7 +601,7 @@ app.post("/api/sponsor/applications/:id/reject", requireSponsor, async (req, res
           a.rejection_reason = ?,
           a.reviewed_at = NOW()
       WHERE a.id = ?
-        AND a.role = 'Driver'
+        AND a.role IN ('Driver', 'Sponsor')
         AND aps.sponsor_name = ?
         AND a.status = 'Pending'`,
       [String(reason).trim(), appId, req.me.sponsor]
