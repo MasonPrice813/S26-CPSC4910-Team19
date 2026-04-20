@@ -3862,6 +3862,19 @@ function truncatePdfText(value, maxLength = 24) {
   return `${text.slice(0, maxLength - 3)}...`;
 }
 
+function escapeCsv(value) {
+  const str = String(value ?? "");
+  if (/[",\n]/.test(str)) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
+function formatCsvDateTime(value) {
+  if (!value) return "";
+  return new Date(value).toLocaleString("en-US");
+}
+
 async function getSponsorReportData({
   sponsorName,
   includeTransactions,
@@ -4255,6 +4268,163 @@ app.post("/api/sponsor/reports/pdf", requireSponsor, async (req, res) => {
     if (!res.headersSent) {
       res.status(500).json({ error: "Could not generate PDF report." });
     }
+  }
+});
+
+app.post("/api/sponsor/reports/csv", requireSponsor, async (req, res) => {
+  try {
+    const sponsorName = req.session.user.sponsor;
+
+    const {
+      includeTransactions = false,
+      includePointHistory = false,
+      startDate = "",
+      endDate = "",
+      driverIds = []
+    } = req.body || {};
+
+    if (!includeTransactions && !includePointHistory) {
+      return res.status(400).json({ error: "Select at least one report category." });
+    }
+
+    const normalizedDriverIds = Array.isArray(driverIds)
+      ? driverIds.map(Number).filter(Number.isFinite)
+      : [];
+
+    const start = normalizeReportDate(startDate, false);
+    const end = normalizeReportDate(endDate, true);
+
+    if (startDate && !start) {
+      return res.status(400).json({ error: "Invalid start date." });
+    }
+
+    if (endDate && !end) {
+      return res.status(400).json({ error: "Invalid end date." });
+    }
+
+    if (start && end && start > end) {
+      return res.status(400).json({ error: "Start date cannot be after end date." });
+    }
+
+    const reportData = await getSponsorReportData({
+      sponsorName,
+      includeTransactions: !!includeTransactions,
+      includePointHistory: !!includePointHistory,
+      startDate: start,
+      endDate: end,
+      driverIds: normalizedDriverIds
+    });
+
+    const rows = [];
+
+    if (includeTransactions) {
+      rows.push([
+        "Section",
+        "Driver",
+        "Product ID",
+        "Points",
+        "Dollars",
+        "Shipping",
+        "Date",
+        "Change",
+        "Before",
+        "After",
+        "Reason"
+      ]);
+
+      if (reportData.transactions.length) {
+        reportData.transactions.forEach(row => {
+          rows.push([
+            "Transaction History",
+            row.driver_name || "",
+            row.product_id ?? "",
+            row.point_cost ?? "",
+            row.dollar_cost ?? "",
+            row.shipping_method || "",
+            formatCsvDateTime(row.date_ordered),
+            "",
+            "",
+            "",
+            ""
+          ]);
+        });
+      } else {
+        rows.push([
+          "Transaction History",
+          "No transaction history found for the selected filters.",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]);
+      }
+
+      rows.push([]);
+    }
+
+    if (includePointHistory) {
+      rows.push([
+        "Section",
+        "Driver",
+        "Product ID",
+        "Points",
+        "Dollars",
+        "Shipping",
+        "Date",
+        "Change",
+        "Before",
+        "After",
+        "Reason"
+      ]);
+
+      if (reportData.pointHistory.length) {
+        reportData.pointHistory.forEach(row => {
+          rows.push([
+            "Point Change History",
+            row.driver_name || "",
+            "",
+            "",
+            "",
+            "",
+            formatCsvDateTime(row.created_at),
+            row.points_change ?? "",
+            row.points_before ?? "",
+            row.points_after ?? "",
+            row.reason || ""
+          ]);
+        });
+      } else {
+        rows.push([
+          "Point Change History",
+          "No point change history found for the selected filters.",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]);
+      }
+    }
+
+    const csv = rows.map(row => row.map(escapeCsv).join(",")).join("\n");
+
+    const filename = `sponsor-report-${Date.now()}.csv`;
+
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.send(csv);
+  } catch (err) {
+    console.error("sponsor csv export error:", err);
+    res.status(500).json({ error: "Could not generate CSV report." });
   }
 });
 

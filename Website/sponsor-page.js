@@ -26,6 +26,7 @@ const reportAllDriversCheckbox = document.getElementById("reportAllDriversCheckb
 const reportDriverCheckboxList = document.getElementById("reportDriverCheckboxList");
 
 const generatePdfReportBtn = document.getElementById("generatePdfReportBtn");
+const generateCsvReportBtn = document.getElementById("generateCsvReportBtn");
 
 function formatNumber(value) {
   return Number(value || 0).toLocaleString("en-US");
@@ -380,7 +381,63 @@ async function generateSponsorPdfReport() {
   }
 }
 
+async function generateSponsorCsvReport() {
+  const includeTransactions = !!includeTransactionsCheckbox?.checked;
+  const includePointHistory = !!includePointHistoryCheckbox?.checked;
+  const startDate = reportStartDateInput?.value || "";
+  const endDate = reportEndDateInput?.value || "";
+  const driverIds = getSelectedReportDriverIds();
+
+  if (!includeTransactions && !includePointHistory) {
+    alert("Select at least one report category.");
+    return;
+  }
+
+  if (startDate && endDate && startDate > endDate) {
+    alert("Start date cannot be after end date.");
+    return;
+  }
+
+  try {
+    const response = await fetch("/api/sponsor/reports/csv", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        includeTransactions,
+        includePointHistory,
+        startDate,
+        endDate,
+        driverIds
+      })
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      alert(err.error || "Failed to generate CSV report.");
+      return;
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "sponsor-report.csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    window.URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error("CSV report generation error:", err);
+    alert("Failed to generate CSV report.");
+  }
+}
+
 generatePdfReportBtn?.addEventListener("click", generateSponsorPdfReport);
+generateCsvReportBtn?.addEventListener("click", generateSponsorCsvReport);
 
 async function loadTransactions() {
   const tableBody = document.getElementById("transactionTableBody");
